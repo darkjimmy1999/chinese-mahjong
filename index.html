@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>線上雙人象棋麻將</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #eef2f3; text-align: center; margin: 0; padding: 20px; }
+        .hidden { display: none !important; }
+        #lobby, #game-container { max-width: 600px; margin: 40px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        input, button { padding: 10px 15px; font-size: 16px; margin: 10px; border-radius: 6px; border: 1px solid #ccc; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #0056b3; }
+        
+        /* 遊戲畫面樣式 */
+        .status-bar { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #333; }
+        .hand-label { font-size: 14px; color: #666; margin: 5px 0; }
+        .card-area { display: flex; justify-content: center; gap: 10px; min-height: 90px; padding: 10px; background: #f8f9fa; border-radius: 8px; margin: 15px 0; }
+        
+        /* 棋牌設計 */
+        .mj-card { width: 50px; height: 75px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 5px rgba(0,0,0,0.2); user-select: none; position: relative; }
+        .mj-card.red { color: #d32f2f; }
+        .mj-card.black { color: #212121; }
+        .mj-card.opponent { background: #cfd8dc; color: transparent; border-color: #78909c; cursor: default; }
+        .mj-card:hover:not(.opponent) { transform: translateY(-5px); background: #fff; }
+        
+        /* 牌河 (丟牌區) */
+        .pool-area { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; min-height: 100px; background: #e0f2f1; padding: 15px; border-radius: 8px; border: 2px dashed #009688; margin: 20px 0; }
+        .pool-area .mj-card { width: 35px; height: 52px; font-size: 20px; cursor: default; }
+        .pool-area .mj-card:hover { transform: none; background: #fffde8; }
+        
+        .action-panel { margin-top: 20px; }
+        .btn-win { background: #28a745; font-size: 18px; padding: 12px 25px; }
+        .btn-win:hover { background: #218838; }
+    </style>
+    <!-- 引入 Socket.io 用戶端 SDK -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+    <!-- 大廳登入與配對 -->
+    <div id="lobby">
+        <h2>🀄️ 線上象棋麻將 湊桌大廳</h2>
+        <input type="text" id="username" placeholder="輸入你的名字" value="學生A"><br>
+        <input type="text" id="roomCode" placeholder="輸入房號 (如: 888)"><br>
+        <button onclick="connectToGame()">進入房間 / 開始湊桌</button>
+        <div id="wait-msg" style="margin-top: 15px; color: #666;"></div>
+    </div>
+
+    <!-- 遊戲主畫面 -->
+    <div id="game-container" class="hidden">
+        <div id="status" class="status-bar">等待對手加入...</div>
+        
+        <!-- 對手手牌數（蓋牌狀態） -->
+        <div class="hand-label">對手手牌 (<span id="opp-name">?</span>)</div>
+        <div id="opponent-hand" class="card-area"></div>
+        
+        <!-- 牌河 (丟牌區) -->
+        <div class="hand-label">牌河 (公共出牌區) ｜ 剩餘牌數: <span id="deck-count">--</span> 張</div>
+        <div id="card-pool" class="pool-area"></div>
+        
+        <!-- 玩家手牌 -->
+        <div class="hand-label">您的手牌 (點擊牌即可打出)</div>
+        <div id="my-hand" class="card-area"></div>
+        
+        <!-- 操作功能鍵 -->
+        <div class="action-panel">
+            <button id="win-btn" class="btn-win hidden" onclick="declareWin()">我胡牌了！🎉</button>
+        </div>
+    </div>
+
+    <script>
+        // 連接至後端伺服器 (本機測試用 localhost，部署後請改為雲端網址)
+        const SERVER_URL = "http://localhost:3000"; 
+        let socket;
+        let currentRoom = "";
+        let myTurn = false;
+
+        // 紅色的象棋牌組清單
+        const redCards = ['帥', '仕', '相', '車', '馬', '炮', '兵'];
+
+        function connectToGame() {
+            const username = document.getElementById('username').value.trim();
+            const roomCode = document.getElementById('roomCode').value.trim();
+            
+            if(!username || !roomCode) {
+                alert('請填入名字與房號！');
+                return;
+            }
+
+            currentRoom = roomCode;
+            socket = io(SERVER_URL);
+
+            // 傳送加入房間事件
+            socket.emit('joinRoom', { username, roomCode });
+            document.getElementById('wait-msg').innerText = `已排入房號 ${roomCode}，等待對手...`;
+
+            // 監聽房間人數更新
+            socket.on('roomUpdated', (players) => {
+                document.getElementById('wait-msg').innerText = `目前房內玩家: ${players.join(' vs ')}。滿2人即自動開局...`;
+            });
+
+            // 監聽遊戲開始
+            socket.on('gameStart', (data) => {
+                document.getElementById('lobby').classList.add('hidden');
+                document.getElementById('game-container').classList.remove('hidden');
+                document.getElementById('opp-name').innerText = data.opponentName;
+                updateUI(data);
+            });
+
+            // 監聽遊戲局勢同步
+            socket.on('gameStateUpdated', (data) => {
+                updateUI(data);
+            });
+
+            // 監聽遊戲結束
+            socket.on('gameOver', ({ winner, reason }) => {
+                alert(`遊戲結束！\n贏家：${winner}\n原因：${reason}`);
+                location.reload(); // 重新整理網頁回到大廳
+            });
+
+            // 監聽系統錯誤或中途斷線
+            socket.on('errorMessage', (msg) => {
+                alert(msg);
+                location.reload();
+            });
+        }
+
+        // 渲染更新畫面
+        function updateUI(data) {
+            myTurn = data.isMyTurn;
+            document.getElementById('deck-count').innerText = data.deckCount;
+            document.getElementById('status').innerText = myTurn ? "🟢 輪到你的回合！請點選一張手牌打出。" : "🔴 等待對手出牌中...";
+
+            // 顯示胡牌按鈕 (只有在自己回合，手牌有6張時才可以判定是否胡牌)
+            if (myTurn && data.myHand.length === 6) {
+                document.getElementById('win-btn').classList.remove('hidden');
+            } else {
+                document.getElementById('win-btn').classList.add('hidden');
+            }
+
+            // 1. 渲染對手手牌 (蓋牌)
+            const oppHandDiv = document.getElementById('opponent-hand');
+            oppHandDiv.innerHTML = "";
+            for(let i=0; i<data.opponentHandCount; i++) {
+                oppHandDiv.innerHTML += `<div class="mj-card opponent">?</div>`;
+            }
+
+            // 2. 渲染我的手牌
+            const myHandDiv = document.getElementById('my-hand');
+            myHandDiv.innerHTML = "";
+            data.myHand.forEach((card, index) => {
+                const colorClass = redCards.includes(card) ? 'red' : 'black';
+                myHandDiv.innerHTML += `<div class="mj-card ${colorClass}" onclick="playCard(${index})">${card}</div>`;
+            });
+
+            // 3. 渲染牌河 (已打出的牌)
+            const poolDiv = document.getElementById('card-pool');
+            poolDiv.innerHTML = "";
+            data.pool.forEach(card => {
+                const colorClass = redCards.includes(card) ? 'red' : 'black';
+                poolDiv.innerHTML += `<div class="mj-card ${colorClass}">${card}</div>`;
+            });
+        }
+
+        // 執行打牌
+        function playCard(index) {
+            if (!myTurn) {
+                alert("還沒輪到你喔！");
+                return;
+            }
+            socket.emit('playCard', { roomCode: currentRoom, cardIndex: index });
+        }
+
+        // 宣告胡牌
+        function declareWin() {
+            if (!myTurn) return;
+            if (confirm("確定你要宣告胡牌了嗎？")) {
+                socket.emit('claimWin', { roomCode: currentRoom });
+            }
+        }
+    </script>
+</body>
+</html>
