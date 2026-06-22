@@ -106,15 +106,19 @@
                 document.getElementById('wait-msg').innerText = `目前湊桌人數 (${players.length}/4): ${players.join(', ')}`;
             });
 
-            socket.on('gameStart', (data) => {
-                document.getElementById('lobby').classList.add('hidden');
-                document.getElementById('game-container').classList.remove('hidden');
-                updateUI(data);
-            });
+         socket.on('gameStart', (data) => {
+    allPlayerNames = data.playerNames;
+    document.getElementById('lobby').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    updateUI(data);
+});
 
-            socket.on('gameStateUpdated', (data) => {
-                updateUI(data);
-            });
+socket.on('gameStateUpdated', (data) => {
+    // 防止開局訊號漏看，這裡也強制把大廳隱藏、亮出牌桌
+    document.getElementById('lobby').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    updateUI(data);
+});
 
             // 收到攔截通知
             socket.on('askInterception', (data) => {
