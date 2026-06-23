@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上四人象棋麻將（全自動完美連局版）</title>
+    <title>線上四人象棋麻將（智慧對局版）</title>
     <style>
         body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow: hidden; }
         .hidden { display: none !important; }
         
-        /* 大廳 */
         #lobby { max-width: 450px; margin: 30px auto; background: white; padding: 25px; border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); text-align: left; }
         #lobby h2 { text-align: center; color: #1b4d22; margin-top: 0; }
         .form-group { margin-bottom: 15px; }
@@ -21,7 +20,6 @@
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
-        /* 牌桌 */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
@@ -41,7 +39,6 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
-        /* 麻將牌 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
@@ -67,7 +64,6 @@
         .my-hand-cards { display: flex; gap: 6px; }
         .pool-area .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
 
-        /* 操作彈窗 */
         #interception-modal { position: fixed; bottom: 185px; right: 40px; background: rgba(0,0,0,0.9); border: 2px solid #ff9800; padding: 12px 24px; border-radius: 12px; display: flex; gap: 12px; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
         .ctrl-btn { font-size: 17px; padding: 8px 22px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; }
         .btn-pong { background: #ff9800; }
@@ -78,7 +74,6 @@
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
         
-        /* 全螢幕定格結算面板 */
         #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 460px; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
         #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
         .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
@@ -225,11 +220,11 @@
             localStorage.setItem('saved_username', username);
             currentRoom = roomCode;
 
-            // ✅【核心修正 2】建立全新的 Socket.io 連線物件，斷開上一次殘留的快取緩存
+            // ✅【核心修正 2】改用標準的 Socket.io 連線參數，移除 forceNew 與 reconnection 限制
             if (socket) {
                 socket.disconnect();
             }
-            socket = io(SERVER_URL, { forceNew: true, reconnection: false });
+            socket = io(SERVER_URL);
 
             socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode });
             document.getElementById('wait-msg').innerText = `正在排入房號 ${roomCode}...`;
@@ -432,12 +427,20 @@
             });
         }
 
-        // ✅【核心修正 3】點擊繼續遊戲後，完全清除舊畫面，重新執行連線函式發送 joinRoom 訊號
+        // ✅【核心修正 3】點擊繼續遊戲後，完全清除大廳畫面，直接呼叫一次加入
         function continueGame() {
             document.getElementById('game-over-modal').classList.add('hidden');
             document.getElementById('game-container').classList.add('hidden');
             document.getElementById('lobby').classList.remove('hidden');
-            connectToGame(); // 重新進行無污染的乾淨握手
+            
+            const username = document.getElementById('username').value.trim();
+            if (socket) {
+                // 直接原地再報到一次，不銷毀 Socket
+                socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode: currentRoom });
+                document.getElementById('wait-msg').innerText = `已就緒！正在等待其他玩家點擊「繼續遊戲」...\n房號：${currentRoom}`;
+            } else {
+                connectToGame();
+            }
         }
 
         function changeRoom() {
