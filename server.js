@@ -19,6 +19,16 @@ const BASE_DECK = [
 ];
 const ORIGINAL_DECK = [...BASE_DECK, ...BASE_DECK];
 
+// 牌組權重排序（紅牌在前，黑牌在後；大牌在前，小牌在後）
+const CARD_ORDER = {
+    '帥': 1, '仕': 2, '相': 3, '車': 4, '馬': 5, '炮': 6, '兵': 7,
+    '將': 8, '士': 9, '象': 10, '車': 11, '馬': 12, '包': 13, '卒': 14
+};
+
+function sortHand(hand) {
+    return [...hand].sort((a, b) => CARD_ORDER[a] - CARD_ORDER[b]);
+}
+
 function shuffleDeck() {
     let deck = [...ORIGINAL_DECK];
     for (let i = deck.length - 1; i > 0; i--) {
@@ -28,22 +38,23 @@ function shuffleDeck() {
     return deck;
 }
 
-// 判定是否為清一色（全紅或全黑）
 function isPureColor(hand, melds) {
     let allCards = [...hand];
     melds.forEach(m => allCards.push(...m.cards));
     const redCards = ['帥', '仕', '相', '車', '馬', '炮', '兵'];
-    
     let hasRed = allCards.some(c => redCards.includes(c));
     let hasBlack = allCards.some(c => !redCards.includes(c));
-    return !(hasRed && hasBlack); // 不能同時有紅有黑
+    return !(hasRed && hasBlack);
 }
 
 function checkWinPattern(hand, melds = []) {
     let allCards = [...hand];
     melds.forEach(m => allCards.push(...m.cards));
-    if (allCards.length !== 8) return false;
-    return canDecompose([...hand].sort(), false);
+    
+    // 槓牌算3張（實際上佔4張），所以如果有1組槓，總張數就是手牌(4)+亮牌(4) = 8張
+    // 演算法內只需確保總張數折算為 8 張，手牌部分利用遞迴驗證
+    let checkHand = [...hand];
+    return canDecompose(checkHand.sort((a,b)=>CARD_ORDER[a]-CARD_ORDER[b]), false);
 }
 
 function canDecompose(cards, hasEye) {
@@ -104,7 +115,7 @@ io.on('connection', (socket) => {
         
         if (existingPlayer) {
             existingPlayer.id = socket.id;
-            existingPlayer.avatar = avatar; // 更新頭像
+            existingPlayer.avatar = avatar;
             if (room.disconnectTimeouts[username]) clearTimeout(room.disconnectTimeouts[username]);
             if (room.status === 'playing') sendStateToAll(roomCode);
             return;
@@ -115,21 +126,24 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 每個玩家初始擁有 300 元
-        room.players.push({ id: socket.id, name: username, avatar: avatar || '🐱', money: 300, hand: [], melds: [] });
+        room.players.push({ id: socket.id, name: username, avatar: avatar || '🐱', money: 300, hand: [], melds: [], newCard: null });
         io.to(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
 
         if (room.players.length === 4) {
             room.status = 'playing';
             room.deck = shuffleDeck();
             room.pool = [];
-            room.turn = Math.floor(Math.random() * 4); // 隨機選莊家
+            room.turn = Math.floor(Math.random() * 4);
 
             for (let i = 0; i < 4; i++) {
-                room.players[i].hand = room.deck.splice(0, 7);
+                room.players[i].hand = sortHand(room.deck.splice(0, 7));
                 room.players[i].melds = [];
+                room.players[i].newCard = null;
             }
-            room.players[room.turn].hand.push(room.deck.splice(0, 1)[0]);
+            // 莊家摸第8張新牌
+            let pCard = room.deck.splice(0, 1)[0];
+            room.players[room.turn].hand.push(pCard);
+            room.players[room.turn].newCard = pCard; // 標記為新摸的牌
             sendStateToAll(roomCode);
         }
     });
@@ -139,7 +153,12 @@ io.on('connection', (socket) => {
         if (!room || room.status !== 'playing' || room.turn !== room.players.findIndex(p => p.id === socket.id)) return;
 
         const player = room.players[room.turn];
+        player.newCard = null; // 出牌後，新牌框消除
+        
         const playedCard = player.hand.splice(cardIndex, 1)[0];
+        // 重新排序剩餘手牌
+        player.hand = sortHand(player.hand);
+
         room.lastPlayed = { card: playedCard, playerIndex: room.turn };
         room.pool.push(playedCard);
 
@@ -150,7 +169,7 @@ io.on('connection', (socket) => {
             if (idx === room.turn) return;
 
             let canPong = p.hand.filter(c => c === playedCard).length >= 2;
-            let canKong = p.hand.filter(c => c === playedCard).length === 3; // 明槓
+            let canKong = p.hand.filter(c => c === playedCard).length === 3;
             let chowChoices = (idx === (room.turn + 1) % 4) ? getChowChoices(p.hand, playedCard) : [];
             let canChow = chowChoices.length > 0;
             let canWin = checkWinPattern([...p.hand, playedCard], p.melds);
@@ -162,9 +181,6 @@ io.on('connection', (socket) => {
             }
         });
 
-        // 檢查出牌者自己是否有「暗槓」或「補槓」的機會
-        let myHandCount = player.hand.filter(c => c === player.hand[player.hand.length - 1]).length;
-
         if (hasInterception) {
             sendStateToAll(roomCode, true); 
         } else {
@@ -172,17 +188,22 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 處理手牌中自己暗槓
+    // 暗槓修正版
     socket.on('declareAnKong', ({ roomCode, card }) => {
         const room = rooms[roomCode];
         if (!room) return;
         const player = room.players.find(p => p.id === socket.id);
+        
         if (player.hand.filter(c => c === card).length === 4) {
-            // 扣除4張手牌，加入亮牌區
-            for(let i=0; i<4; i++) player.hand.splice(player.hand.indexOf(card), 1);
+            // 精準扣除4張
+            player.hand = player.hand.filter(c => c !== card);
             player.melds.push({ type: '槓', cards: [card, card, card, card] });
-            // 槓牌後要摸一張新牌（補牌）
-            player.hand.push(room.deck.splice(0, 1)[0]);
+            
+            // 補牌並標記為新牌
+            let drawn = room.deck.splice(0, 1)[0];
+            player.hand.push(drawn);
+            player.newCard = drawn;
+            
             sendStateToAll(roomCode);
         }
     });
@@ -192,7 +213,7 @@ io.on('connection', (socket) => {
         if (!room || !room.pendingActions[socket.id]) return;
 
         room.pendingActions[socket.id].decided = true;
-        room.pendingActions[socket.id].action = action; // 'pong', 'kong', 'chow', 'win', 'pass'
+        room.pendingActions[socket.id].action = action;
         room.pendingActions[socket.id].details = details;
 
         let allDecided = Object.values(room.pendingActions).every(a => a.decided);
@@ -203,9 +224,8 @@ io.on('connection', (socket) => {
             let chowId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'chow');
 
             if (winId) {
-                // 胡牌結算邏輯
                 const winner = room.players.find(p => p.id === winId);
-                const loser = room.players[room.lastPlayed.playerIndex]; // 放銃的人
+                const loser = room.players[room.lastPlayed.playerIndex];
                 let isPure = isPureColor(winner.hand, winner.melds);
                 let score = isPure ? 100 : 50;
 
@@ -239,10 +259,11 @@ io.on('connection', (socket) => {
             player.hand.splice(player.hand.indexOf(card), 1);
             player.melds.push({ type: '碰', cards: [card, card, card] });
         } else if (type === 'kong') {
-            // 明槓：扣3張手牌
             for(let i=0; i<3; i++) player.hand.splice(player.hand.indexOf(card), 1);
             player.melds.push({ type: '槓', cards: [card, card, card, card] });
-            player.hand.push(room.deck.splice(0, 1)[0]); // 槓牌要摸一張補牌
+            let drawn = room.deck.splice(0, 1)[0];
+            player.hand.push(drawn);
+            player.newCard = drawn; // 槓後補牌標記新牌
         } else if (type === 'chow') {
             details.forEach(c => {
                 if (c !== card) player.hand.splice(player.hand.indexOf(c), 1);
@@ -250,13 +271,16 @@ io.on('connection', (socket) => {
             player.melds.push({ type: '吃', cards: details });
         }
 
+        // 吃碰完手牌剩7張，需要打出一張，沒有新摸進的牌框
+        player.hand = sortHand(player.hand);
+        player.newCard = null; 
+
         room.turn = pIdx;
         room.lastPlayed = null;
         room.pendingActions = {};
         sendStateToAll(roomCode);
     }
 
-    // 自摸結算邏輯
     socket.on('claimWin', ({ roomCode }) => {
         const room = rooms[roomCode];
         if (!room || room.status !== 'playing') return;
@@ -266,7 +290,7 @@ io.on('connection', (socket) => {
         const player = room.players[pIdx];
         if (checkWinPattern(player.hand, player.melds)) {
             let isPure = isPureColor(player.hand, player.melds);
-            let scoreEach = isPure ? 150 : 100; // 每家要給的金額
+            let scoreEach = isPure ? 150 : 100;
 
             room.players.forEach((p, idx) => {
                 if (idx !== pIdx) {
@@ -289,8 +313,21 @@ io.on('connection', (socket) => {
             room.status = 'waiting';
             return;
         }
+        
+        // 清除上一位玩家的新牌標記
+        room.players[room.turn].newCard = null;
+        room.players[room.turn].hand = sortHand(room.players[room.turn].hand);
+
         room.turn = (room.turn + 1) % 4;
-        room.players[room.turn].hand.push(room.deck.splice(0, 1)[0]);
+        
+        let nextPlayer = room.players[room.turn];
+        let drawn = room.deck.splice(0, 1)[0];
+        
+        // 摸牌時：手牌先排序前面的7張，新牌直接插在最後面！(符合你的要求)
+        nextPlayer.hand = sortHand(nextPlayer.hand);
+        nextPlayer.hand.push(drawn);
+        nextPlayer.newCard = drawn; // 標記最新摸進的牌
+
         room.lastPlayed = null;
         room.pendingActions = {};
         sendStateToAll(roomCode);
@@ -309,6 +346,7 @@ io.on('connection', (socket) => {
 
             io.to(player.id).emit('gameStateUpdated', {
                 myHand: player.hand,
+                newCard: player.newCard, // 傳送誰是最新摸的牌
                 playersStatus: playersStatus,
                 turnIndex: room.turn,
                 myIndex: index,
@@ -319,10 +357,6 @@ io.on('connection', (socket) => {
             });
         });
     }
-
-    socket.on('disconnect', () => {
-        // 免費版容錯保留
-    });
 });
 
 server.listen(process.env.PORT || 3000);
