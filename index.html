@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上四人象棋麻將（終極防護版）</title>
+    <title>線上四人象棋麻將（標準牌數版）</title>
     <style>
-        /* ✅ 修正了電腦版的捲動崩潰問題 */
         body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow-x: hidden; overflow-y: auto; }
         .hidden { display: none !important; }
         
-        /* ✅ 提高大廳層級，確保絕對不會被隱形元素蓋住而不能點 */
         #lobby { max-width: 450px; margin: 30px auto; background: white; padding: 25px; border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); text-align: left; position: relative; z-index: 100; }
         #lobby h2 { text-align: center; color: #1b4d22; margin-top: 0; }
         .form-group { margin-bottom: 15px; }
@@ -22,7 +20,6 @@
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
-        /* 牌桌 */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
@@ -42,7 +39,6 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
-        /* 麻將牌 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
@@ -68,7 +64,6 @@
         .my-hand-cards { display: flex; gap: 6px; }
         .pool-area .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
 
-        /* 操作彈窗 */
         #interception-modal { position: fixed; bottom: 185px; right: 40px; background: rgba(0,0,0,0.9); border: 2px solid #ff9800; padding: 12px 24px; border-radius: 12px; display: flex; gap: 12px; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
         .ctrl-btn { font-size: 17px; padding: 8px 22px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; }
         .btn-pong { background: #ff9800; }
@@ -79,7 +74,6 @@
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
         
-        /* 全螢幕定格結算面板 */
         #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 460px; max-width: 90%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
         #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
         .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
@@ -91,7 +85,7 @@
 <body>
 
     <div id="lobby">
-        <h2>🀄️ 四人象棋麻將（智慧對局）</h2>
+        <h2>🀄️ 四人象棋麻將（標準對局）</h2>
         <div class="form-group">
             <label>1. 輸入你的名字：</label>
             <input type="text" id="username" placeholder="例如：Wendy" value="玩家">
@@ -206,16 +200,17 @@
         let savedChowChoices = [];
         let globalMyHand = [];
         let globalNewCard = null;
-        const redCards = ['帥', '仕', '相', '車', '馬', '炮', '兵'];
+        
+        // ✅【核心修正 3】前端正確區分紅黑車馬為：俥、傌
+        const redCards = ['帥', '仕', '相', '俥', '傌', '炮', '兵'];
 
-        // ✅【核心防護 1】安全讀取 localStorage，絕對不讓它在電腦版崩潰！
         window.addEventListener("DOMContentLoaded", () => {
             try {
                 if (localStorage.getItem('saved_username')) {
                     document.getElementById('username').value = localStorage.getItem('saved_username');
                 }
             } catch (e) {
-                console.warn('瀏覽器安全設定阻擋了記憶名稱功能，但不影響遊戲進行。');
+                console.warn('LocalStorage 取用失敗，已跳過');
             }
         });
 
@@ -226,19 +221,13 @@
         }
 
         function connectToGame() {
-            // ✅【核心防護 2】檢查套件是否因為電腦版阻擋器導致無法載入
-            if (typeof io === 'undefined') {
-                alert("伺服器連線套件載入失敗！這通常是因為您的瀏覽器裝了阻擋外掛（AdBlock等）或學校網路阻擋。請關閉外掛或更換網路後重新整理網頁！");
-                return;
-            }
+            if (typeof io === 'undefined') return alert("無法連線伺服器，請重新整理網頁！");
 
             const username = document.getElementById('username').value.trim();
             const roomCode = document.getElementById('roomCode').value.trim();
             if(!username || !roomCode) return alert('請完整填寫名字與房號！');
 
-            // 安全寫入名稱
             try { localStorage.setItem('saved_username', username); } catch (e) {}
-            
             currentRoom = roomCode;
 
             if (socket) {
