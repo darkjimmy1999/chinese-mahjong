@@ -12,8 +12,7 @@ const io = new Server(server, {
 });
 
 const rooms = {};
-// 記憶全場玩家的金額歷史 { "玩家名字": 金額 }
-const globalMoneyLedger = {};
+const globalMoneyLedger = {}; 
 
 const BASE_DECK = [
     '帥', '仕', '仕', '相', '相', '車', '車', '馬', '馬', '炮', '炮', '兵', '兵', '兵', '兵', '兵',
@@ -104,7 +103,7 @@ io.on('connection', (socket) => {
         if (!roomCode || !username) return;
         socket.join(roomCode);
 
-        if (!rooms[roomCode]) {
+        if (!rooms[roomCode] || rooms[roomCode].status === 'waiting') {
             rooms[roomCode] = { players: [], deck: [], turn: 0, pool: [], status: 'waiting', lastPlayed: null, pendingActions: {}, disconnectTimeouts: {} };
         }
 
@@ -119,12 +118,11 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if (room.status === 'playing' || room.players.length >= 4) {
-            socket.emit('errorMessage', '該房間人數已滿或正在進行中！');
+        if (room.players.length >= 4) {
+            socket.emit('errorMessage', '該房間人數已滿！');
             return;
         }
 
-        // 金額歷史繼承機制：如果之前有玩過就沿用金額，沒有的話就初始化為 300
         if (globalMoneyLedger[username] === undefined) {
             globalMoneyLedger[username] = 300;
         }
@@ -143,24 +141,22 @@ io.on('connection', (socket) => {
 
         if (room.players.length === 4) {
             room.status = 'playing';
-            room.deck = shuffleDeck();
-            room.pool = [];
+            room.deck = shuffleDeck(); 
+            room.pool = [];            
+            room.lastPlayed = null;
             room.turn = Math.floor(Math.random() * 4);
 
             for (let i = 0; i < 4; i++) {
-                room.players[i].hand = sortHand(room.deck.splice(0, 7));
-                room.players[i].melds = [];
+                room.players[i].hand = sortHand(room.deck.splice(0, 7)); 
+                room.players[i].melds = [];                             
                 room.players[i].newCard = null;
-                // 同步最新帳面金額
-                room.players[i].money = globalMoneyLedger[room.players[i].name];
+                room.players[i].money = globalMoneyLedger[room.players[i].name]; 
             }
             
-            // 莊家摸牌
             let pCard = room.deck.splice(0, 1)[0];
             room.players[room.turn].hand.push(pCard);
             room.players[room.turn].newCard = pCard;
 
-            // ⚡️ 莊家天胡判定
             if (checkWinPattern(room.players[room.turn].hand, room.players[room.turn].melds)) {
                 executeZimoWin(roomCode, room.turn);
                 return;
@@ -181,9 +177,9 @@ io.on('connection', (socket) => {
         player.hand = sortHand(player.hand);
 
         room.lastPlayed = { card: playedCard, playerIndex: room.turn };
-        room.pool.push(playedCard);
+        room.pool.push(playedCard); 
 
-        // ⚡️ 全自動胡牌判定（不讓學生選，系統直接截擊）
+        // ⚡️ 全自動胡牌優先判定
         let automaticWinPlayerIdx = -1;
         room.players.forEach((p, idx) => {
             if (idx === room.turn) return;
@@ -197,7 +193,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 沒有人胡牌，才檢查碰、槓、吃
+        // 🔍【核心修正】動態過濾攔截者：沒事的人，絕不建立 Action 紀錄
         room.pendingActions = {};
         let hasInterception = false;
 
@@ -209,6 +205,7 @@ io.on('connection', (socket) => {
             let chowChoices = (idx === (room.turn + 1) % 4) ? getChowChoices(p.hand, playedCard) : [];
             let canChow = chowChoices.length > 0;
 
+            // 💡 只有真正有資格吃/碰/槓的人，才會被列入「必須等待回應」的名單
             if (canPong || canKong || canChow) {
                 hasInterception = true;
                 room.pendingActions[p.id] = { canPong, canKong, canChow, chowChoices, canWin: false, decided: false, action: null, details: null };
@@ -217,8 +214,10 @@ io.on('connection', (socket) => {
         });
 
         if (hasInterception) {
+            // 有人有動作，大腦發送狀態，但標記為「正處於攔截等待中」
             sendStateToAll(roomCode, true); 
         } else {
+            // ✅ 如果全場另外三個人都沒他的事，0毫秒都不等，直接下一家摸牌！
             nextTurn(roomCode);
         }
     });
@@ -237,7 +236,6 @@ io.on('connection', (socket) => {
             player.hand.push(drawn);
             player.newCard = drawn;
             
-            // ⚡️ 槓上開花自摸判定
             if (checkWinPattern(player.hand, player.melds)) {
                 executeZimoWin(roomCode, pIdx);
                 return;
@@ -255,6 +253,7 @@ io.on('connection', (socket) => {
         room.pendingActions[socket.id].action = action;
         room.pendingActions[socket.id].details = details;
 
+        // ✅ 大腦只會審查「有資格操作的人」是否都做決定了
         let allDecided = Object.values(room.pendingActions).every(a => a.decided);
         if (allDecided) {
             let kongId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'kong');
@@ -268,6 +267,7 @@ io.on('connection', (socket) => {
             } else if (chowId) {
                 executeMeld(roomCode, chowId, 'chow', room.pendingActions[chowId].details);
             } else {
+                // 如果能吃碰的人最後都按了「取消（pass）」，順移到下一家
                 nextTurn(roomCode);
             }
         }
@@ -279,7 +279,7 @@ io.on('connection', (socket) => {
         const player = room.players[pIdx];
         const card = room.lastPlayed.card;
 
-        room.pool.pop();
+        room.pool.pop(); 
         
         if (type === 'pong') {
             player.hand.splice(player.hand.indexOf(card), 1);
@@ -293,7 +293,6 @@ io.on('connection', (socket) => {
             player.hand.push(drawn);
             player.newCard = drawn;
 
-            // ⚡️ 明槓槓上開花自摸判定
             if (checkWinPattern(player.hand, player.melds)) {
                 executeZimoWin(roomCode, pIdx);
                 return;
@@ -314,13 +313,12 @@ io.on('connection', (socket) => {
         sendStateToAll(roomCode);
     }
 
-    // ⚡️ 獨立抽離：全自動胡牌結算
     function executeHuWin(roomCode, winnerIdx, loserIdx, card) {
         const room = rooms[roomCode];
         const winner = room.players[winnerIdx];
         const loser = room.players[loserIdx];
         
-        // 將放銃的牌塞進贏家手牌讓畫面顯示完整
+        room.pool.pop(); 
         winner.hand.push(card);
         winner.hand = sortHand(winner.hand);
 
@@ -330,18 +328,16 @@ io.on('connection', (socket) => {
         winner.money += score;
         loser.money -= score;
 
-        // 全局同步金額
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
+        room.status = 'waiting'; 
 
         io.to(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
         });
-        room.status = 'waiting';
     }
 
-    // ⚡️ 獨立抽離：全自動自摸結算
     function executeZimoWin(roomCode, winnerIdx) {
         const room = rooms[roomCode];
         const winner = room.players[winnerIdx];
@@ -356,20 +352,20 @@ io.on('connection', (socket) => {
         });
 
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
+        room.status = 'waiting'; 
 
         io.to(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
         });
-        room.status = 'waiting';
     }
 
     function nextTurn(roomCode) {
         const room = rooms[roomCode];
         if (room.deck.length === 0) {
-            io.to(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
             room.status = 'waiting';
+            io.to(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
             return;
         }
         
@@ -384,7 +380,6 @@ io.on('connection', (socket) => {
         nextPlayer.hand.push(drawn);
         nextPlayer.newCard = drawn;
 
-        // ⚡️ 全自動自摸判定
         if (checkWinPattern(nextPlayer.hand, nextPlayer.melds)) {
             executeZimoWin(roomCode, room.turn);
             return;
