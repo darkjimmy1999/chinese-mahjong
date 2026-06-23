@@ -12,7 +12,7 @@ const io = new Server(server, {
 });
 
 const rooms = {};
-const globalMoneyLedger = {}; 
+const globalMoneyLedger = {}; // 記憶全場玩家金額歷史
 
 const BASE_DECK = [
     '帥', '仕', '仕', '相', '相', '車', '車', '馬', '馬', '炮', '炮', '兵', '兵', '兵', '兵', '兵',
@@ -103,18 +103,23 @@ io.on('connection', (socket) => {
         if (!roomCode || !username) return;
         socket.join(roomCode);
 
+        // ✅【核心修正 1】如果房間不存在，或者之前是完結狀態，強制完全徹底重置它，絕不遺留髒資料
         if (!rooms[roomCode] || rooms[roomCode].status === 'waiting') {
-            rooms[roomCode] = { players: [], deck: [], turn: 0, pool: [], status: 'waiting', lastPlayed: null, pendingActions: {}, disconnectTimeouts: {} };
+            rooms[roomCode] = { players: [], deck: [], turn: 0, pool: [], status: 'waiting', lastPlayed: null, pendingActions: {} };
         }
 
         const room = rooms[roomCode];
-        const existingPlayer = room.players.find(p => p.name === username);
         
+        // 檢查名字是否已經有人在房間裡（避免重連時重複加入）
+        let existingPlayer = room.players.find(p => p.name === username);
         if (existingPlayer) {
             existingPlayer.id = socket.id;
             existingPlayer.avatar = avatar;
-            if (room.disconnectTimeouts[username]) clearTimeout(room.disconnectTimeouts[username]);
-            if (room.status === 'playing') sendStateToAll(roomCode);
+            if (room.status === 'playing') {
+                sendStateToAll(roomCode);
+            } else {
+                io.to(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
+            }
             return;
         }
 
@@ -137,8 +142,10 @@ io.on('connection', (socket) => {
             newCard: null 
         });
         
+        // ✅ 同步給當前房間內的所有人最新湊桌名單
         io.to(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
 
+        // 滿 4 人，重頭洗牌開局！
         if (room.players.length === 4) {
             room.status = 'playing';
             room.deck = shuffleDeck(); 
@@ -157,6 +164,7 @@ io.on('connection', (socket) => {
             room.players[room.turn].hand.push(pCard);
             room.players[room.turn].newCard = pCard;
 
+            // 莊家天胡判定
             if (checkWinPattern(room.players[room.turn].hand, room.players[room.turn].melds)) {
                 executeZimoWin(roomCode, room.turn);
                 return;
@@ -179,7 +187,7 @@ io.on('connection', (socket) => {
         room.lastPlayed = { card: playedCard, playerIndex: room.turn };
         room.pool.push(playedCard); 
 
-        // ⚡️ 全自動胡牌優先判定
+        // 全自動胡牌優先判定
         let automaticWinPlayerIdx = -1;
         room.players.forEach((p, idx) => {
             if (idx === room.turn) return;
@@ -193,7 +201,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 🔍【核心修正】動態過濾攔截者：沒事的人，絕不建立 Action 紀錄
+        // 動態過濾攔截者
         room.pendingActions = {};
         let hasInterception = false;
 
@@ -205,7 +213,6 @@ io.on('connection', (socket) => {
             let chowChoices = (idx === (room.turn + 1) % 4) ? getChowChoices(p.hand, playedCard) : [];
             let canChow = chowChoices.length > 0;
 
-            // 💡 只有真正有資格吃/碰/槓的人，才會被列入「必須等待回應」的名單
             if (canPong || canKong || canChow) {
                 hasInterception = true;
                 room.pendingActions[p.id] = { canPong, canKong, canChow, chowChoices, canWin: false, decided: false, action: null, details: null };
@@ -214,10 +221,8 @@ io.on('connection', (socket) => {
         });
 
         if (hasInterception) {
-            // 有人有動作，大腦發送狀態，但標記為「正處於攔截等待中」
             sendStateToAll(roomCode, true); 
         } else {
-            // ✅ 如果全場另外三個人都沒他的事，0毫秒都不等，直接下一家摸牌！
             nextTurn(roomCode);
         }
     });
@@ -253,7 +258,6 @@ io.on('connection', (socket) => {
         room.pendingActions[socket.id].action = action;
         room.pendingActions[socket.id].details = details;
 
-        // ✅ 大腦只會審查「有資格操作的人」是否都做決定了
         let allDecided = Object.values(room.pendingActions).every(a => a.decided);
         if (allDecided) {
             let kongId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'kong');
@@ -267,7 +271,6 @@ io.on('connection', (socket) => {
             } else if (chowId) {
                 executeMeld(roomCode, chowId, 'chow', room.pendingActions[chowId].details);
             } else {
-                // 如果能吃碰的人最後都按了「取消（pass）」，順移到下一家
                 nextTurn(roomCode);
             }
         }
