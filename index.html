@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上四人象棋麻將（智慧對局版）</title>
+    <title>線上四人象棋麻將（完美連線版）</title>
     <style>
         body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow: hidden; }
         .hidden { display: none !important; }
@@ -220,7 +220,7 @@
             localStorage.setItem('saved_username', username);
             currentRoom = roomCode;
 
-            // ✅【核心修正 2】改用標準的 Socket.io 連線參數，移除 forceNew 與 reconnection 限制
+            // ✅ 建立單純、標準且乾淨的 Socket 連線
             if (socket) {
                 socket.disconnect();
             }
@@ -407,7 +407,7 @@
                 let row = document.createElement('div');
                 row.className = "chow-choice-row";
                 choice.forEach(c => {
-                    const colorClass = redCards.includes(c) ? 'style="color:red;"' : 'style="color:black;"';
+                    const colorClass = redCards.includes(c) ? 'style="color:red;"' : style="color:black;"';
                     row.innerHTML += `<span ${colorClass}>${c} </span>`;
                 });
                 row.onclick = () => sendAction('chow', choice);
@@ -427,7 +427,6 @@
             });
         }
 
-        // ✅【核心修正 3】點擊繼續遊戲後，完全清除大廳畫面，直接呼叫一次加入
         function continueGame() {
             document.getElementById('game-over-modal').classList.add('hidden');
             document.getElementById('game-container').classList.add('hidden');
@@ -435,7 +434,6 @@
             
             const username = document.getElementById('username').value.trim();
             if (socket) {
-                // 直接原地再報到一次，不銷毀 Socket
                 socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode: currentRoom });
                 document.getElementById('wait-msg').innerText = `已就緒！正在等待其他玩家點擊「繼續遊戲」...\n房號：${currentRoom}`;
             } else {
