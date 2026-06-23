@@ -101,16 +101,16 @@ function getChowChoices(hand, card) {
 io.on('connection', (socket) => {
     socket.on('joinRoom', ({ username, avatar, roomCode }) => {
         if (!roomCode || !username) return;
+
+        // ✅ 強制在記憶體中完成分組加入
         socket.join(roomCode);
 
-        // ✅【核心修正 1】如果房間不存在，或者之前是完結狀態，強制完全徹底重置它，絕不遺留髒資料
         if (!rooms[roomCode] || rooms[roomCode].status === 'waiting') {
             rooms[roomCode] = { players: [], deck: [], turn: 0, pool: [], status: 'waiting', lastPlayed: null, pendingActions: {} };
         }
 
         const room = rooms[roomCode];
         
-        // 檢查名字是否已經有人在房間裡（避免重連時重複加入）
         let existingPlayer = room.players.find(p => p.name === username);
         if (existingPlayer) {
             existingPlayer.id = socket.id;
@@ -142,10 +142,9 @@ io.on('connection', (socket) => {
             newCard: null 
         });
         
-        // ✅ 同步給當前房間內的所有人最新湊桌名單
-        io.to(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
+        // ✅ 核心修正：確保名單發送給全房間內的所有連線，用 io.in 確保無時間差阻擋
+        io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
 
-        // 滿 4 人，重頭洗牌開局！
         if (room.players.length === 4) {
             room.status = 'playing';
             room.deck = shuffleDeck(); 
@@ -164,7 +163,6 @@ io.on('connection', (socket) => {
             room.players[room.turn].hand.push(pCard);
             room.players[room.turn].newCard = pCard;
 
-            // 莊家天胡判定
             if (checkWinPattern(room.players[room.turn].hand, room.players[room.turn].melds)) {
                 executeZimoWin(roomCode, room.turn);
                 return;
@@ -187,7 +185,6 @@ io.on('connection', (socket) => {
         room.lastPlayed = { card: playedCard, playerIndex: room.turn };
         room.pool.push(playedCard); 
 
-        // 全自動胡牌優先判定
         let automaticWinPlayerIdx = -1;
         room.players.forEach((p, idx) => {
             if (idx === room.turn) return;
@@ -201,7 +198,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 動態過濾攔截者
         room.pendingActions = {};
         let hasInterception = false;
 
@@ -334,7 +330,7 @@ io.on('connection', (socket) => {
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
         room.status = 'waiting'; 
 
-        io.to(roomCode).emit('gameOver', { 
+        io.in(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
@@ -357,7 +353,7 @@ io.on('connection', (socket) => {
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
         room.status = 'waiting'; 
 
-        io.to(roomCode).emit('gameOver', { 
+        io.in(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
@@ -368,7 +364,7 @@ io.on('connection', (socket) => {
         const room = rooms[roomCode];
         if (room.deck.length === 0) {
             room.status = 'waiting';
-            io.to(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
+            io.in(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
             return;
         }
         
