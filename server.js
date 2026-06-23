@@ -13,15 +13,15 @@ const io = new Server(server, {
 
 const rooms = {};
 const globalMoneyLedger = {}; 
+const globalLastWinner = {}; // ✅ 記憶每個房間上一把的贏家
 
-// ✅【核心修正 1】標準麻將牌型，14種字，每種精準 4 張，共 56 張！
+// ✅ 精準對齊 14 種字（紅：俥傌，黑：車馬）
 const TYPES = ['帥', '仕', '相', '俥', '傌', '炮', '兵', '將', '士', '象', '車', '馬', '包', '卒'];
 const ORIGINAL_DECK = [];
 for (let i = 0; i < 4; i++) {
     ORIGINAL_DECK.push(...TYPES);
 }
 
-// ✅ 加入 俥、傌 以區分紅黑
 const CARD_ORDER = {
     '帥': 1, '仕': 2, '相': 3, '俥': 4, '傌': 5, '炮': 6, '兵': 7,
     '將': 8, '士': 9, '象': 10, '車': 11, '馬': 12, '包': 13, '卒': 14
@@ -40,6 +40,7 @@ function shuffleDeck() {
     return deck;
 }
 
+// ✅ 顏色判定精準對齊
 function isPureColor(hand, melds) {
     let allCards = [...hand];
     melds.forEach(m => allCards.push(...m.cards));
@@ -73,7 +74,6 @@ function canDecompose(cards, hasEye) {
         remaining.splice(0, 3);
         if (canDecompose(remaining, hasEye)) return true;
     }
-    // ✅ 對應 俥傌炮 的吃牌組合
     const eatGroups = [['將', '士', '象'], ['帥', '仕', '相'], ['車', '馬', '包'], ['俥', '傌', '炮']];
     for (let group of eatGroups) {
         if (group.includes(c1)) {
@@ -104,6 +104,7 @@ function getChowChoices(hand, card) {
 io.on('connection', (socket) => {
     socket.on('joinRoom', ({ username, avatar, roomCode }) => {
         if (!roomCode || !username) return;
+
         socket.join(roomCode);
 
         if (!rooms[roomCode]) {
@@ -145,12 +146,19 @@ io.on('connection', (socket) => {
         
         io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
 
+        // 滿 4 人開局！
         if (room.players.length === 4) {
             room.status = 'playing';
             room.deck = shuffleDeck(); 
             room.pool = [];            
             room.lastPlayed = null;
+            
+            // ✅ 連莊機制：如果上一把有贏家，贏家做莊；沒有則隨機
             room.turn = Math.floor(Math.random() * 4);
+            if (globalLastWinner[roomCode]) {
+                let winIdx = room.players.findIndex(p => p.name === globalLastWinner[roomCode]);
+                if (winIdx !== -1) room.turn = winIdx;
+            }
 
             for (let i = 0; i < 4; i++) {
                 room.players[i].hand = sortHand(room.deck.splice(0, 7)); 
@@ -159,6 +167,7 @@ io.on('connection', (socket) => {
                 room.players[i].money = globalMoneyLedger[room.players[i].name]; 
             }
             
+            // 莊家拿第 8 張牌
             let pCard = room.deck.splice(0, 1)[0];
             room.players[room.turn].hand.push(pCard);
             room.players[room.turn].newCard = pCard;
@@ -328,11 +337,13 @@ io.on('connection', (socket) => {
         loser.money -= score;
 
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
+        globalLastWinner[roomCode] = winner.name; // ✅ 紀錄贏家
         
         io.in(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`, 
-            playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
+            playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})),
+            winCard: card // ✅ 傳送胡的那張牌
         });
         delete rooms[roomCode];
     }
@@ -351,11 +362,13 @@ io.on('connection', (socket) => {
         });
 
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
+        globalLastWinner[roomCode] = winner.name; // ✅ 紀錄贏家
 
         io.in(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`, 
-            playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
+            playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})),
+            winCard: winner.newCard // ✅ 傳送自摸的那張牌
         });
         delete rooms[roomCode];
     }
