@@ -13,9 +13,8 @@ const io = new Server(server, {
 
 const rooms = {};
 const globalMoneyLedger = {}; 
-const globalLastWinner = {}; // ✅ 記憶每個房間上一把的贏家
+const globalLastWinner = {}; 
 
-// ✅ 精準對齊 14 種字（紅：俥傌，黑：車馬）
 const TYPES = ['帥', '仕', '相', '俥', '傌', '炮', '兵', '將', '士', '象', '車', '馬', '包', '卒'];
 const ORIGINAL_DECK = [];
 for (let i = 0; i < 4; i++) {
@@ -40,7 +39,6 @@ function shuffleDeck() {
     return deck;
 }
 
-// ✅ 顏色判定精準對齊
 function isPureColor(hand, melds) {
     let allCards = [...hand];
     melds.forEach(m => allCards.push(...m.cards));
@@ -101,6 +99,24 @@ function getChowChoices(hand, card) {
     return choices;
 }
 
+// ✅ 統一處理結算與破產投票的邏輯
+function checkBankruptcyAndEndGame(roomCode, winnerName, reasonStr, playersStatus, winCard) {
+    const room = rooms[roomCode];
+    let bankrupts = room.players.filter(p => p.money <= 0);
+
+    if (bankrupts.length > 0) {
+        room.status = 'voting';
+        room.bankrupts = bankrupts.map(p => p.name);
+        room.votes = { revive: 0, kick: 0, votedPlayers: [] };
+        
+        io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
+        io.in(roomCode).emit('startBankruptcyVote', { bankrupts: room.bankrupts });
+    } else {
+        io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
+        delete rooms[roomCode]; // 正常結束，刪除房間等待繼續遊戲
+    }
+}
+
 io.on('connection', (socket) => {
     socket.on('joinRoom', ({ username, avatar, roomCode }) => {
         if (!roomCode || !username) return;
@@ -134,26 +150,16 @@ io.on('connection', (socket) => {
             globalMoneyLedger[username] = 300;
         }
 
-        room.players.push({ 
-            id: socket.id, 
-            name: username, 
-            avatar: avatar || '🐱', 
-            money: globalMoneyLedger[username], 
-            hand: [], 
-            melds: [], 
-            newCard: null 
-        });
+        room.players.push({ id: socket.id, name: username, avatar: avatar || '🐱', money: globalMoneyLedger[username], hand: [], melds: [], newCard: null });
         
         io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
 
-        // 滿 4 人開局！
         if (room.players.length === 4) {
             room.status = 'playing';
             room.deck = shuffleDeck(); 
             room.pool = [];            
             room.lastPlayed = null;
             
-            // ✅ 連莊機制：如果上一把有贏家，贏家做莊；沒有則隨機
             room.turn = Math.floor(Math.random() * 4);
             if (globalLastWinner[roomCode]) {
                 let winIdx = room.players.findIndex(p => p.name === globalLastWinner[roomCode]);
@@ -167,7 +173,6 @@ io.on('connection', (socket) => {
                 room.players[i].money = globalMoneyLedger[room.players[i].name]; 
             }
             
-            // 莊家拿第 8 張牌
             let pCard = room.deck.splice(0, 1)[0];
             room.players[room.turn].hand.push(pCard);
             room.players[room.turn].newCard = pCard;
@@ -212,7 +217,6 @@ io.on('connection', (socket) => {
 
         room.players.forEach((p, idx) => {
             if (idx === room.turn) return;
-
             let canPong = p.hand.filter(c => c === playedCard).length >= 2;
             let canKong = p.hand.filter(c => c === playedCard).length === 3;
             let chowChoices = (idx === (room.turn + 1) % 4) ? getChowChoices(p.hand, playedCard) : [];
@@ -250,7 +254,6 @@ io.on('connection', (socket) => {
                 executeZimoWin(roomCode, pIdx);
                 return;
             }
-
             sendStateToAll(roomCode);
         }
     });
@@ -269,15 +272,38 @@ io.on('connection', (socket) => {
             let pongId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'pong');
             let chowId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'chow');
 
-            if (kongId) {
-                executeMeld(roomCode, kongId, 'kong');
-            } else if (pongId) {
-                executeMeld(roomCode, pongId, 'pong');
-            } else if (chowId) {
-                executeMeld(roomCode, chowId, 'chow', room.pendingActions[chowId].details);
-            } else {
-                nextTurn(roomCode);
-            }
+            if (kongId) executeMeld(roomCode, kongId, 'kong');
+            else if (pongId) executeMeld(roomCode, pongId, 'pong');
+            else if (chowId) executeMeld(roomCode, chowId, 'chow', room.pendingActions[chowId].details);
+            else nextTurn(roomCode);
+        }
+    });
+
+    // ✅ 新增：處理破產投票邏輯
+    socket.on('submitVote', ({ roomCode, vote }) => {
+        const room = rooms[roomCode];
+        if (!room || room.status !== 'voting') return;
+        
+        const player = room.players.find(p => p.id === socket.id);
+        if (!player || room.bankrupts.includes(player.name) || room.votes.votedPlayers.includes(player.name)) return;
+
+        room.votes.votedPlayers.push(player.name);
+        room.votes[vote]++;
+
+        // 2 票即通過
+        if (room.votes.revive >= 2) {
+            room.bankrupts.forEach(bName => {
+                let bPlayer = room.players.find(p => p.name === bName);
+                if (bPlayer) {
+                    bPlayer.money = 100;
+                    globalMoneyLedger[bName] = 100;
+                }
+            });
+            io.in(roomCode).emit('voteResult', { result: 'revive', targets: room.bankrupts });
+            delete rooms[roomCode]; 
+        } else if (room.votes.kick >= 2) {
+            io.in(roomCode).emit('voteResult', { result: 'kick', targets: room.bankrupts });
+            delete rooms[roomCode];
         }
     });
 
@@ -296,11 +322,9 @@ io.on('connection', (socket) => {
         } else if (type === 'kong') {
             for(let i=0; i<3; i++) player.hand.splice(player.hand.indexOf(card), 1);
             player.melds.push({ type: '槓', cards: [card, card, card, card] });
-            
             let drawn = room.deck.splice(0, 1)[0];
             player.hand.push(drawn);
             player.newCard = drawn;
-
             if (checkWinPattern(player.hand, player.melds)) {
                 executeZimoWin(roomCode, pIdx);
                 return;
@@ -337,15 +361,13 @@ io.on('connection', (socket) => {
         loser.money -= score;
 
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
-        globalLastWinner[roomCode] = winner.name; // ✅ 紀錄贏家
+        globalLastWinner[roomCode] = winner.name; 
         
-        io.in(roomCode).emit('gameOver', { 
-            winner: winner.name, 
-            reason: `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`, 
-            playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})),
-            winCard: card // ✅ 傳送胡的那張牌
-        });
-        delete rooms[roomCode];
+        room.status = 'waiting';
+        let playersStatus = room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds}));
+        let reasonStr = `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`;
+        
+        checkBankruptcyAndEndGame(roomCode, winner.name, reasonStr, playersStatus, card);
     }
 
     function executeZimoWin(roomCode, winnerIdx) {
@@ -362,15 +384,13 @@ io.on('connection', (socket) => {
         });
 
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
-        globalLastWinner[roomCode] = winner.name; // ✅ 紀錄贏家
+        globalLastWinner[roomCode] = winner.name; 
 
-        io.in(roomCode).emit('gameOver', { 
-            winner: winner.name, 
-            reason: `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`, 
-            playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})),
-            winCard: winner.newCard // ✅ 傳送自摸的那張牌
-        });
-        delete rooms[roomCode];
+        room.status = 'waiting';
+        let playersStatus = room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds}));
+        let reasonStr = `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`;
+
+        checkBankruptcyAndEndGame(roomCode, winner.name, reasonStr, playersStatus, winner.newCard);
     }
 
     function nextTurn(roomCode) {
