@@ -224,7 +224,12 @@
 
             localStorage.setItem('saved_username', username);
             currentRoom = roomCode;
-            socket = io(SERVER_URL);
+
+            // ✅【核心修正 2】建立全新的 Socket.io 連線物件，斷開上一次殘留的快取緩存
+            if (socket) {
+                socket.disconnect();
+            }
+            socket = io(SERVER_URL, { forceNew: true, reconnection: false });
 
             socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode });
             document.getElementById('wait-msg').innerText = `正在排入房號 ${roomCode}...`;
@@ -247,7 +252,6 @@
                 updateUI(data);
             });
 
-            // 💡 只有被後端點名「有資格攔截的人」，前端才會收到這個訊號並跳出控制面版
             socket.on('askInterception', (data) => {
                 savedChowChoices = data.chowChoices;
                 if (data.canKong) document.getElementById('action-kong').classList.remove('hidden');
@@ -358,12 +362,15 @@
             const handDiv = document.getElementById(`hand-${pos}`);
             const meldsDiv = document.getElementById(`melds-${pos}`);
 
-            if(isActive) block.classList.add('active');
-            else block.classList.remove('active');
-
-            let suffix = pos === 'me' ? ' (我)' : pos === 'left' ? ' (上家)' : pos === 'right' ? ' (下家)' : ' (對家)';
-            nameTxt.innerText = status.name + suffix;
-            moneyTxt.innerText = ` $${status.money} 元`;
+            if(block) {
+                if(isActive) block.classList.add('active');
+                else block.classList.remove('active');
+            }
+            if(nameTxt) {
+                let suffix = pos === 'me' ? ' (我)' : pos === 'left' ? ' (上家)' : pos === 'right' ? ' (下家)' : ' (對家)';
+                nameTxt.innerText = status.name + suffix;
+            }
+            if(moneyTxt) moneyTxt.innerText = ` $${status.money} 元`;
             if(avatarTxt) avatarTxt.innerText = status.avatar;
 
             if (handDiv) {
@@ -373,16 +380,18 @@
                 }
             }
 
-            meldsDiv.innerHTML = "";
-            status.melds.forEach(m => {
-                let groupHtml = `<div class="meld-group">`;
-                m.cards.forEach(card => {
-                    const colorClass = redCards.includes(card) ? 'red' : 'black';
-                    groupHtml += `<div class="mj-card no-hover ${colorClass}">${card}</div>`;
+            if (meldsDiv) {
+                meldsDiv.innerHTML = "";
+                status.melds.forEach(m => {
+                    let groupHtml = `<div class="meld-group">`;
+                    m.cards.forEach(card => {
+                        const colorClass = redCards.includes(card) ? 'red' : 'black';
+                        groupHtml += `<div class="mj-card no-hover ${colorClass}">${card}</div>`;
+                    });
+                    groupHtml += `</div>`;
+                    meldsDiv.innerHTML += groupHtml;
                 });
-                groupHtml += `</div>`;
-                meldsDiv.innerHTML += groupHtml;
-            });
+            }
         }
 
         function playCard(index) {
@@ -390,7 +399,6 @@
             socket.emit('playCard', { roomCode: currentRoom, cardIndex: index });
         }
 
-        // 💡 點擊「取消」或執行動作，只會影響有資格操作的該玩家
         function sendAction(action, details = null) {
             document.getElementById('interception-modal').classList.add('hidden');
             document.getElementById('chow-menu-modal').classList.add('hidden');
@@ -424,21 +432,19 @@
             });
         }
 
+        // ✅【核心修正 3】點擊繼續遊戲後，完全清除舊畫面，重新執行連線函式發送 joinRoom 訊號
         function continueGame() {
             document.getElementById('game-over-modal').classList.add('hidden');
             document.getElementById('game-container').classList.add('hidden');
             document.getElementById('lobby').classList.remove('hidden');
-            
-            const username = document.getElementById('username').value.trim();
-            socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode: currentRoom });
-            document.getElementById('wait-msg').innerText = `已就緒！正在等待其他玩家點擊「繼續遊戲」...\n房號：${currentRoom}`;
+            connectToGame(); // 重新進行無污染的乾淨握手
         }
 
         function changeRoom() {
             document.getElementById('game-over-modal').classList.add('hidden');
             document.getElementById('game-container').classList.add('hidden');
             document.getElementById('lobby').classList.remove('hidden');
-            document.getElementById('wait-msg').innerText = "請輸入新房號重新湊桌，您的點數已累積！";
+            document.getElementById('wait-msg').innerText = "請輸入新房號重新湊桌，您的點數已安全累積！";
         }
     </script>
 </body>
