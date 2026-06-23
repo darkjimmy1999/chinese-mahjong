@@ -2,10 +2,11 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <!-- ✅ 強制手機不准縮放，並完美貼合安全邊界（viewport-fit=cover） -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>線上四人象棋麻將（旗艦對局版）</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow: hidden; }
+        body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow-x: hidden; overflow-y: auto; }
         .hidden { display: none !important; }
         
         #lobby { max-width: 450px; margin: 30px auto; background: white; padding: 25px; border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); text-align: left; position: relative; z-index: 100; }
@@ -20,6 +21,7 @@
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
+        /* 💻 電腦/平板版預設牌桌 */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
@@ -39,6 +41,7 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
+        /* 麻將牌 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
@@ -58,6 +61,7 @@
         .my-hand-cards { display: flex; gap: 6px; }
         .pool-area .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
 
+        /* 操作彈窗 */
         #interception-modal { position: fixed; bottom: 185px; right: 40px; background: rgba(0,0,0,0.9); border: 2px solid #ff9800; padding: 12px 24px; border-radius: 12px; display: flex; gap: 12px; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
         .ctrl-btn { font-size: 17px; padding: 8px 22px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; }
         .btn-pong { background: #ff9800; }
@@ -68,29 +72,58 @@
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
         
+        /* 結算與投票面板 */
         #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 550px; max-width: 95%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
         #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
         .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
         .end-btn-group { display: flex; justify-content: center; gap: 20px; margin-top: 25px; }
         .btn-action-end { padding: 12px 25px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; }
 
-        /* ✅ 手機橫式全螢幕 RWD 自適應 */
-        @media screen and (max-height: 500px) and (orientation: landscape) {
-            body { padding: 0; margin: 0; }
-            #game-container { height: 100vh; width: 100vw; max-width: none; grid-template-rows: 75px 1fr 100px; grid-template-columns: 110px 1fr 110px; gap: 2px; padding: 0; margin: 0; }
+        #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
+
+        /* 📱 ✅ 手機橫式全螢幕極致滿版自適應 (Mobile Landscape) */
+        @media screen and (max-width: 950px) and (orientation: landscape) {
+            body { padding: 0; margin: 0; height: 100svh; overflow: hidden; }
+            #game-container {
+                height: 100svh; width: 100vw; max-width: 100vw;
+                grid-template-rows: 65px 1fr 90px;
+                grid-template-columns: 100px 1fr 100px;
+                gap: 2px; padding: 2px; box-sizing: border-box;
+            }
             .table-center { padding: 5px; border-radius: 8px; }
-            .position-me { padding: 5px 15px; border-radius: 0; }
-            .mj-card { width: 32px; height: 48px; font-size: 20px; border-bottom-width: 3px; }
-            .mj-card.new-draw-card { margin-left: 8px; border-bottom-width: 4px !important; }
-            .mj-back { width: 20px; height: 30px; border-bottom-width: 2px; }
-            .pool-area .mj-card, .meld-group .mj-card { width: 24px; height: 36px; font-size: 14px; border-bottom-width: 2px; }
-            .player-avatar { font-size: 22px; }
-            .player-name { font-size: 12px; }
-            .player-money { font-size: 11px; padding: 1px 4px; margin-top: 1px; }
-            #focus-play-box { top: -30px; transform: scale(0.7); }
-            #game-over-modal { width: 90%; height: 85vh; overflow-y: auto; padding: 15px; }
-            .score-board-row { padding: 5px 10px; font-size: 14px; margin: 4px 0; }
-            #interception-modal { bottom: 120px; right: 20px; padding: 8px 15px; transform: scale(0.85); transform-origin: right bottom; }
+            .position-me { padding: 5px 10px; border-radius: 0; }
+            
+            /* 將卡牌縮小適應手機 */
+            .mj-card { width: 30px; height: 44px; font-size: 18px; border-bottom-width: 3px; border-radius: 4px; }
+            .mj-card.new-draw-card { margin-left: 6px; border-bottom-width: 4px !important; }
+            .mj-back { width: 18px; height: 26px; border-bottom-width: 2px; border-radius: 3px; }
+            .pool-area .mj-card, .meld-group .mj-card { width: 22px; height: 32px; font-size: 14px; border-bottom-width: 2px; }
+            
+            .player-avatar { font-size: 20px; margin-bottom: 0; }
+            .player-name { font-size: 11px; }
+            .player-money { font-size: 10px; padding: 1px 4px; margin-top: 1px; }
+            
+            .horizontal-cards { gap: 1px; }
+            .vertical-cards { gap: 1px; }
+            .me-bottom-layout { gap: 5px; }
+            .my-hand-cards { gap: 3px; }
+            
+            .pool-area { min-height: 80px; max-width: 95%; }
+            .deck-info { font-size: 11px; padding: 3px 10px; margin-bottom: 4px; }
+            
+            /* 縮小提示框與控制按鈕 */
+            #focus-play-box { top: -25px; transform: scale(0.65); padding: 4px 8px; }
+            #interception-modal { bottom: 95px; right: 10px; padding: 8px 12px; transform: scale(0.85); transform-origin: right bottom; }
+            .ctrl-btn { font-size: 14px; padding: 6px 16px; }
+            #chow-menu-modal { bottom: 140px; right: 10px; padding: 10px; transform: scale(0.85); transform-origin: right bottom; }
+            
+            /* 縮小結算視窗以防超出邊界 */
+            #game-over-modal, #vote-modal { width: 95%; max-height: 95svh; overflow-y: auto; padding: 15px; border-radius: 12px; }
+            #game-over-modal h2 { font-size: 20px; margin-bottom: 5px; }
+            #end-reason-text { font-size: 14px; margin: 5px 0; }
+            .score-board-row { padding: 4px 10px; font-size: 13px; margin: 3px 0; }
+            .end-btn-group { margin-top: 15px; gap: 10px; }
+            .btn-action-end { padding: 8px 15px; font-size: 14px; }
         }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -196,19 +229,19 @@
         <h2 id="end-winner-title">🏆 遊戲結束</h2>
         <p id="end-reason-text" style="font-size:16px; color:#fff; font-weight:bold; margin: 10px 0;"></p>
         
-        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; gap:4px; margin: 15px 0; min-height: 55px;"></div>
+        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; gap:4px; margin: 10px 0; min-height: 45px;"></div>
         
         <div id="end-scoreboard-list"></div>
         <div class="end-btn-group" id="normal-end-btns">
             <button class="btn-action-end" style="background:#4caf50;" onclick="continueGame()">繼續遊戲 (莊家連莊)</button>
             <button class="btn-action-end" style="background:#2196f3;" onclick="changeRoom()">更改房間</button>
         </div>
-        <div id="vote-wait-msg" class="hidden" style="color:#ffeb3b; font-size:18px; font-weight:bold; margin-top:20px;"></div>
+        <div id="vote-wait-msg" class="hidden" style="color:#ffeb3b; font-size:16px; font-weight:bold; margin-top:15px;"></div>
     </div>
 
-    <div id="vote-modal" class="hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center;">
+    <div id="vote-modal" class="hidden">
         <h2 style="color: #ff5252; margin-top:0;">⚠️ 破產警告！</h2>
-        <p id="vote-text" style="font-size:18px; color:white; font-weight:bold; line-height:1.5;"></p>
+        <p id="vote-text" style="font-size:16px; color:white; font-weight:bold; line-height:1.5; margin-bottom: 15px;"></p>
         <div id="vote-btns" class="end-btn-group">
             <button class="btn-action-end" style="background:#ff9800;" onclick="submitVote('revive')">💰 借他 100 元續玩</button>
             <button class="btn-action-end" style="background:#e53935;" onclick="submitVote('kick')">👋 請他退出遊戲</button>
@@ -305,10 +338,11 @@
                     let winnerData = playersStatus.find(p => p.name === winner);
                     if (winnerData) {
                         winnerData.melds.forEach(m => {
-                            let groupHtml = `<div class="meld-group" style="margin-right:6px; display:flex; gap:1px; background:rgba(0,0,0,0.5); padding:2px; border-radius:4px;">`;
+                            let groupHtml = `<div class="meld-group" style="margin-right:4px; display:flex; gap:1px; background:rgba(0,0,0,0.5); padding:2px; border-radius:4px;">`;
                             m.cards.forEach(c => {
                                 const colorClass = redCards.includes(c) ? 'red' : 'black';
-                                groupHtml += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:40px; font-size:16px; border-bottom-width:2px;">${c}</div>`;
+                                // RWD 自適應 class 讓手機版也能縮小攤牌
+                                groupHtml += `<div class="mj-card no-hover ${colorClass}" style="width:24px; height:36px; font-size:14px; border-bottom-width:2px;">${c}</div>`;
                             });
                             groupHtml += `</div>`;
                             handDiv.innerHTML += groupHtml;
@@ -322,12 +356,12 @@
                         
                         handCards.forEach(c => {
                             const colorClass = redCards.includes(c) ? 'red' : 'black';
-                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:32px; height:46px; font-size:18px; border-bottom-width:3px; margin:0 2px;">${c}</div>`;
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:42px; font-size:16px; border-bottom-width:3px; margin:0 2px;">${c}</div>`;
                         });
                         
                         if (winCard) {
                             const colorClass = redCards.includes(winCard) ? 'red' : 'black';
-                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:32px; height:46px; font-size:18px; border: 3px solid #ffeb3b; box-shadow: 0 0 15px #ffeb3b; margin-left:12px; border-bottom-width:4px;">${winCard}</div>`;
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:42px; font-size:16px; border: 3px solid #ffeb3b; box-shadow: 0 0 10px #ffeb3b; margin-left:8px; border-bottom-width:4px;">${winCard}</div>`;
                         }
                     }
                 }
@@ -343,15 +377,12 @@
                     `;
                 });
                 
-                // 恢復正常的按鈕區（以防上一把是投票）
                 document.getElementById('normal-end-btns').classList.remove('hidden');
                 document.getElementById('vote-wait-msg').classList.add('hidden');
                 document.getElementById('game-over-modal').classList.remove('hidden');
             });
 
-            // ✅ 新增：破產投票接收器
             socket.on('startBankruptcyVote', ({ bankrupts }) => {
-                // 隱藏原本的繼續遊戲按鈕
                 document.getElementById('normal-end-btns').classList.add('hidden');
                 
                 let myName = document.getElementById('username').value.trim();
@@ -367,14 +398,12 @@
                 }
             });
 
-            // ✅ 新增：投票結果揭曉
             socket.on('voteResult', ({ result, targets }) => {
                 document.getElementById('vote-modal').classList.add('hidden');
                 let names = targets.join('、');
                 
                 if (result === 'revive') {
                     alert(`🎉 投票通過！\n【${names}】獲得大家的支持，帶著 100 元重新加入戰局！`);
-                    // 前端動態把 0 元變成 100 元
                     document.querySelectorAll('.score-board-row').forEach(row => {
                         targets.forEach(t => {
                             if (row.querySelector('.score-name').innerText.includes(t)) {
@@ -517,7 +546,6 @@
             socket.emit('respondInterception', { roomCode: currentRoom, action, details });
         }
 
-        // ✅ 發送投票結果
         function submitVote(voteType) {
             document.getElementById('vote-btns').classList.add('hidden');
             document.getElementById('vote-text').innerText = "🗳️ 已收到您的選票，正在等待其他人...";
