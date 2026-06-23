@@ -12,16 +12,18 @@ const io = new Server(server, {
 });
 
 const rooms = {};
-const globalMoneyLedger = {}; // 記憶全場玩家金額歷史
+const globalMoneyLedger = {}; 
 
-const BASE_DECK = [
-    '帥', '仕', '仕', '相', '相', '車', '車', '馬', '馬', '炮', '炮', '兵', '兵', '兵', '兵', '兵',
-    '將', '士', '士', '象', '象', '車', '車', '馬', '馬', '包', '包', '卒', '卒', '卒', '卒', '卒'
-];
-const ORIGINAL_DECK = [...BASE_DECK, ...BASE_DECK];
+// ✅【核心修正 1】標準麻將牌型，14種字，每種精準 4 張，共 56 張！
+const TYPES = ['帥', '仕', '相', '俥', '傌', '炮', '兵', '將', '士', '象', '車', '馬', '包', '卒'];
+const ORIGINAL_DECK = [];
+for (let i = 0; i < 4; i++) {
+    ORIGINAL_DECK.push(...TYPES);
+}
 
+// ✅ 加入 俥、傌 以區分紅黑
 const CARD_ORDER = {
-    '帥': 1, '仕': 2, '相': 3, '車': 4, '馬': 5, '炮': 6, '兵': 7,
+    '帥': 1, '仕': 2, '相': 3, '俥': 4, '傌': 5, '炮': 6, '兵': 7,
     '將': 8, '士': 9, '象': 10, '車': 11, '馬': 12, '包': 13, '卒': 14
 };
 
@@ -41,7 +43,7 @@ function shuffleDeck() {
 function isPureColor(hand, melds) {
     let allCards = [...hand];
     melds.forEach(m => allCards.push(...m.cards));
-    const redCards = ['帥', '仕', '相', '車', '馬', '炮', '兵'];
+    const redCards = ['帥', '仕', '相', '俥', '傌', '炮', '兵'];
     let hasRed = allCards.some(c => redCards.includes(c));
     let hasBlack = allCards.some(c => !redCards.includes(c));
     return !(hasRed && hasBlack);
@@ -71,7 +73,8 @@ function canDecompose(cards, hasEye) {
         remaining.splice(0, 3);
         if (canDecompose(remaining, hasEye)) return true;
     }
-    const eatGroups = [['將', '士', '象'], ['帥', '仕', '相'], ['車', '馬', '包'], ['車', '馬', '炮']];
+    // ✅ 對應 俥傌炮 的吃牌組合
+    const eatGroups = [['將', '士', '象'], ['帥', '仕', '相'], ['車', '馬', '包'], ['俥', '傌', '炮']];
     for (let group of eatGroups) {
         if (group.includes(c1)) {
             if (cards.includes(group[0]) && cards.includes(group[1]) && cards.includes(group[2])) {
@@ -87,7 +90,7 @@ function canDecompose(cards, hasEye) {
 }
 
 function getChowChoices(hand, card) {
-    const eatGroups = [['將', '士', '象'], ['帥', '仕', '相'], ['車', '馬', '包'], ['車', '馬', '炮']];
+    const eatGroups = [['將', '士', '象'], ['帥', '仕', '相'], ['車', '馬', '包'], ['俥', '傌', '炮']];
     let choices = [];
     for (let group of eatGroups) {
         if (group.includes(card)) {
@@ -101,10 +104,8 @@ function getChowChoices(hand, card) {
 io.on('connection', (socket) => {
     socket.on('joinRoom', ({ username, avatar, roomCode }) => {
         if (!roomCode || !username) return;
-
         socket.join(roomCode);
 
-        // ✅【核心修正 1】只有在房間「完全不存在」時才建立！絕不洗掉裡面正在等的人！
         if (!rooms[roomCode]) {
             rooms[roomCode] = { players: [], deck: [], turn: 0, pool: [], status: 'waiting', lastPlayed: null, pendingActions: {} };
         }
@@ -144,7 +145,6 @@ io.on('connection', (socket) => {
         
         io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
 
-        // 滿 4 人，開局！
         if (room.players.length === 4) {
             room.status = 'playing';
             room.deck = shuffleDeck(); 
@@ -328,14 +328,12 @@ io.on('connection', (socket) => {
         loser.money -= score;
 
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
-
+        
         io.in(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
         });
-        
-        // ✅【核心修正 2】遊戲結束，徹底把房間從雲端刪除，確保「繼續遊戲」可以建立乾淨的新房！
         delete rooms[roomCode];
     }
 
@@ -359,8 +357,6 @@ io.on('connection', (socket) => {
             reason: `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
         });
-        
-        // ✅ 徹底刪除房間
         delete rooms[roomCode];
     }
 
@@ -368,7 +364,7 @@ io.on('connection', (socket) => {
         const room = rooms[roomCode];
         if (room.deck.length === 0) {
             io.in(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
-            delete rooms[roomCode]; // ✅ 流局也刪除房間
+            delete rooms[roomCode];
             return;
         }
         
@@ -420,4 +416,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`伺服器在 ${PORT} 通路啟動`));
+server.listen(PORT, () => console.log(`伺服器在 ${PORT} 啟動`));
