@@ -2,7 +2,6 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <!-- ✅ 強制鎖死手機縮放，並完美貼合所有手機的安全邊界 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>線上四人象棋麻將（旗艦對局版）</title>
     <style>
@@ -21,7 +20,7 @@
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
-        /* 💻 電腦/平板版預設牌桌 (維持完美現狀) */
+        /* 💻 電腦/平板版預設牌桌 layout (維持完美不變) */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
@@ -41,6 +40,7 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
+        /* 麻將牌基本樣式 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
@@ -60,6 +60,7 @@
         .my-hand-cards { display: flex; gap: 6px; }
         .pool-area .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
 
+        /* 操作彈窗 */
         #interception-modal { position: fixed; bottom: 185px; right: 40px; background: rgba(0,0,0,0.9); border: 2px solid #ff9800; padding: 12px 24px; border-radius: 12px; display: flex; gap: 12px; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
         .ctrl-btn { font-size: 17px; padding: 8px 22px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; }
         .btn-pong { background: #ff9800; }
@@ -70,9 +71,7 @@
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
         
-        .text-red { color: #d32f2f; font-weight: bold; }
-        .text-black { color: #212121; font-weight: bold; }
-
+        /* 結算與投票面板 */
         #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 550px; max-width: 95%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
         #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
         .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
@@ -81,8 +80,39 @@
 
         #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
 
-        /* 📱 ✅【終極解決方案】全面捨棄 px，改用 svh (最小可視高度) 動態縮放，保證 100% 絕對不切邊！ */
-        @media screen and (max-height: 500px) and (orientation: landscape), screen and (max-width: 950px) and (orientation: landscape) {
+        /* 純 CSS 類別處理吃牌花色 */
+        .text-red { color: #d32f2f; font-weight: bold; }
+        .text-black { color: #212121; font-weight: bold; }
+
+        /* 📱 ✅【新增要求 1】阻擋手機直立遊玩，強制要求翻轉螢幕（業界標準做法） */
+        @media screen and (max-width: 850px) and (orientation: portrait) {
+            body::before {
+                content: "🀄️ 請將手機旋轉至【橫向】以進行遊戲\A\A（轉橫後版面就會正常囉！）";
+                white-space: pre-wrap; /* 讓 \A 可以換行 */
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: #1b4d22;
+                color: #ffeb3b;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                font-size: 22px;
+                font-weight: bold;
+                z-index: 9999;
+                padding: 20px;
+                text-align: center;
+                line-height: 1.6;
+                box-sizing: border-box;
+            }
+            
+            /* 在直立狀態下，把原本的排版全部隱藏，防走鐘 */
+            #lobby, #game-container, #game-over-modal, #vote-modal {
+                display: none !important;
+            }
+        }
+
+        /* 📱 ✅【新增要求 2】放寬橫向模式的觸發條件（改用安全的百分比 svh 佈局，完美相容大尺寸手機） */
+        @media screen and (max-width: 950px) and (orientation: landscape) {
             html, body {
                 position: fixed !important; 
                 top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
@@ -90,8 +120,7 @@
                 padding: 0 !important; margin: 0 !important;
                 overflow: hidden !important;
                 background: #1b4d22 !important;
-                /* 徹底關閉手機瀏覽器的「下拉整理」橡皮筋滾動，鎖死畫面 */
-                touch-action: none !important; 
+                touch-action: none !important; /* 鎖死 Safari 橡皮筋下拉效果 */
             }
             
             #game-container {
@@ -104,7 +133,6 @@
                 height: auto !important;
                 max-width: none !important;
                 display: grid !important;
-                /* 捨棄死板的 px，改用 svh 來分配上下空間，保證絕對貼合！ */
                 grid-template-rows: 20svh minmax(0, 1fr) 28svh !important;
                 grid-template-columns: 15vw minmax(0, 1fr) 15vw !important;
                 gap: 1vw !important; 
@@ -118,13 +146,12 @@
             .position-left, .position-right { padding: 1vw !important; }
             .position-me { padding: 1svh 2vw !important; border-radius: 0 !important; background: rgba(0,0,0,0.6) !important; justify-content: space-around !important; }
             
-            /* 🀄️ 所有卡牌大小全面改為 svh 橡皮筋式縮放 */
+            /* 卡牌等比 svh 自動橡皮筋縮放 */
             .mj-card { width: 6svh !important; height: 9svh !important; font-size: 4svh !important; border-bottom-width: 0.6svh !important; border-radius: 0.5svh !important; margin: 0 0.2vw !important; }
             .mj-card.new-draw-card { margin-left: 2vw !important; border-bottom-width: 0.8svh !important; }
             .mj-back { width: 4svh !important; height: 6svh !important; border-bottom-width: 0.4svh !important; border-radius: 0.5svh !important; }
             .pool-area .mj-card, .meld-group .mj-card { width: 4.5svh !important; height: 6.8svh !important; font-size: 3svh !important; border-bottom-width: 0.4svh !important; }
 
-            /* 文字全部改為 svh 縮放 */
             .player-avatar { font-size: 4.5svh !important; margin-bottom: 0 !important; }
             .player-name { font-size: 2.2svh !important; }
             .player-money { font-size: 2svh !important; padding: 0.3svh 1vw !important; margin-top: 0.3svh !important; border-radius: 2svh !important; }
@@ -136,17 +163,15 @@
             .pool-area { max-height: 100% !important; overflow: hidden !important; gap: 0.5vw !important; align-content: center !important; }
             .deck-info { font-size: 2.2svh !important; padding: 0.5svh 2vw !important; margin-bottom: 1svh !important; border-radius: 3svh !important; }
             
-            /* 彈窗面版 svh 縮放 */
             #focus-play-box { top: -5svh !important; transform: scale(0.7) !important; padding: 1svh 2vw !important; }
             #interception-modal { bottom: 30svh !important; right: 2vw !important; padding: 1svh 2vw !important; transform: scale(0.8) !important; transform-origin: right bottom !important; border-width: 1px !important; }
             .ctrl-btn { font-size: 2.8svh !important; padding: 1svh 3vw !important; border-radius: 1svh !important; }
             #chow-menu-modal { bottom: 42svh !important; right: 2vw !important; padding: 1.5svh !important; transform: scale(0.8) !important; transform-origin: right bottom !important; }
             
-            /* 結算視窗 svh 縮放 */
-            #game-over-modal, #vote-modal { width: 85vw !important; max-height: 90svh !important; overflow-y: auto !important; padding: 3svh !important; border-radius: 2svh !important; }
+            #game-over-modal, #vote-modal { width: 85vw !important; max-height: 90vh !important; overflow-y: auto !important; padding: 3svh !important; border-radius: 2svh !important; }
             #game-over-modal h2 { font-size: 4.5svh !important; margin-bottom: 1.5svh !important; }
             #end-reason-text { font-size: 2.5svh !important; margin: 1svh 0 !important; }
-            .score-board-row { padding: 1svh 2vw !important; font-size: 2.5svh !important; margin: 0.5svh 0 !important; }
+            .score-board-row { padding: 4px 10px !important; font-size: 2.2svh !important; margin: 0.5svh 0 !important; }
             .end-btn-group { margin-top: 2svh !important; gap: 3vw !important; }
             .btn-action-end { padding: 1.5svh 3vw !important; font-size: 2.5svh !important; border-radius: 1svh !important; }
             
@@ -159,7 +184,7 @@
 <body>
 
     <div id="lobby">
-        <h2>🀄️ 四人象棋麻將（旗艦對局）</h2>
+        <h2>🀄️ 四人象棋麻將（標準對局）</h2>
         <div class="form-group">
             <label>1. 輸入你的名字：</label>
             <input type="text" id="username" placeholder="例如：Wendy" value="玩家">
@@ -277,7 +302,7 @@
     </div>
 
     <script>
-        // ⚠️ 請確認這是您目前的 Render 網址
+        // ⚠️ 請確認這串專屬的 Render 網址完全正確
         const SERVER_URL = "https://mahjong-server-nwmj.onrender.com"; 
         
         let socket;
@@ -562,6 +587,22 @@
             }
         }
 
+        function openChowMenu() {
+            const listDiv = document.getElementById('chow-choices-list');
+            listDiv.innerHTML = "";
+            savedChowChoices.forEach(choice => {
+                let row = document.createElement('div');
+                row.className = "chow-choice-row";
+                choice.forEach(c => {
+                    const colorClass = redCards.includes(c) ? "text-red" : "text-black";
+                    row.innerHTML += `<span class="${colorClass}">${c} </span>`;
+                });
+                row.onclick = () => sendAction('chow', choice);
+                listDiv.appendChild(row);
+            });
+            document.getElementById('chow-menu-modal').classList.remove('hidden');
+        }
+
         function playCard(index) {
             if (!myTurn) return alert("還沒輪到你喔！");
             socket.emit('playCard', { roomCode: currentRoom, cardIndex: index });
@@ -577,22 +618,6 @@
             document.getElementById('vote-btns').classList.add('hidden');
             document.getElementById('vote-text').innerText = "🗳️ 已收到您的選票，正在等待其他人...";
             socket.emit('submitVote', { roomCode: currentRoom, vote: voteType });
-        }
-
-        function openChowMenu() {
-            const listDiv = document.getElementById('chow-choices-list');
-            listDiv.innerHTML = "";
-            savedChowChoices.forEach(choice => {
-                let row = document.createElement('div');
-                row.className = "chow-choice-row";
-                choice.forEach(c => {
-                    const colorClass = redCards.includes(c) ? "text-red" : "text-black";
-                    row.innerHTML += `<span class="${colorClass}">${c} </span>`;
-                });
-                row.onclick = () => sendAction('chow', choice);
-                listDiv.appendChild(row);
-            });
-            document.getElementById('chow-menu-modal').classList.remove('hidden');
         }
 
         function checkAndAnKong() {
