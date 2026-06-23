@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>線上四人象棋麻將（手機旗艦版）</title>
+    <title>線上四人象棋麻將（穩定升級版）</title>
     <style>
         body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow-x: hidden; overflow-y: auto; }
         .hidden { display: none !important; }
@@ -20,7 +20,7 @@
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
-        /* 💻 電腦/平板版預設牌桌 */
+        /* 💻 電腦/平板版預設牌桌 (完全不變) */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
@@ -40,7 +40,6 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
-        /* 麻將牌 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
@@ -70,6 +69,10 @@
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
         
+        /* ✅ PRO: 純 CSS 處理字體顏色，杜絕 JS 引號字串拼接崩潰 */
+        .text-red { color: #d32f2f; font-weight: bold; }
+        .text-black { color: #212121; font-weight: bold; }
+
         #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 550px; max-width: 95%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
         #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
         .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
@@ -78,9 +81,8 @@
 
         #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
 
-        /* 📱 ✅ 手機橫式物理級鎖死滿版 (APP 等級防跑版) */
+        /* 📱 ✅ PRO: 精準鎖定「手機橫置 (高度 < 500px)」，放過 iPad！使用安全 px 確保版面穩如泰山 */
         @media screen and (max-height: 500px) and (orientation: landscape) {
-            /* 鎖死 Body，完美避開 Safari 網址列與底部橫條 */
             html, body {
                 position: fixed; top: 0; left: 0; right: 0; bottom: 0;
                 width: 100%; height: 100%;
@@ -88,7 +90,6 @@
                 overflow: hidden;
                 background: #1b4d22;
                 box-sizing: border-box;
-                /* 支援 iPhone 瀏海與安全邊界 */
                 padding-left: env(safe-area-inset-left);
                 padding-right: env(safe-area-inset-right);
                 padding-bottom: env(safe-area-inset-bottom);
@@ -98,8 +99,8 @@
                 position: relative;
                 width: 100%; height: 100%;
                 display: grid;
-                grid-template-rows: auto 1fr auto;
-                grid-template-columns: 85px 1fr 85px; /* 側邊欄變窄 */
+                grid-template-rows: 60px 1fr 75px; /* 安全固定像素，絕不被瀏覽器網址列拉扯 */
+                grid-template-columns: 80px 1fr 80px;
                 gap: 2px; padding: 2px;
                 box-sizing: border-box;
             }
@@ -108,13 +109,11 @@
             .seat-block { padding: 2px; border-radius: 6px; }
             .position-me { padding: 4px 5px; border-radius: 0; background: rgba(0,0,0,0.6); } 
             
-            /* 卡牌等比大幅微縮，保證不切邊 */
             .mj-card { width: 26px; height: 38px; font-size: 16px; border-bottom-width: 2px; border-radius: 3px; margin: 0 1px; }
             .mj-card.new-draw-card { margin-left: 6px; border-bottom-width: 3px !important; }
             .mj-back { width: 16px; height: 24px; border-bottom-width: 2px; border-radius: 2px; }
             .pool-area .mj-card, .meld-group .mj-card { width: 20px; height: 28px; font-size: 12px; border-bottom-width: 2px; }
             
-            /* 文字微縮 */
             .player-avatar { font-size: 18px; margin-bottom: 0; }
             .player-name { font-size: 10px; }
             .player-money { font-size: 9px; padding: 1px 3px; margin-top: 1px; }
@@ -128,13 +127,11 @@
             .pool-area { min-height: 50px; max-width: 100%; gap: 1px; align-content: center; }
             .deck-info { font-size: 10px; padding: 2px 6px; margin-bottom: 2px; }
             
-            /* 提示與按鈕微縮 */
             #focus-play-box { top: -20px; transform: scale(0.6); padding: 4px 8px; }
             #interception-modal { bottom: 55px; right: 5px; padding: 4px 8px; transform: scale(0.7); transform-origin: right bottom; border-width: 1px; }
             .ctrl-btn { font-size: 12px; padding: 4px 10px; }
             #chow-menu-modal { bottom: 90px; right: 5px; padding: 6px; transform: scale(0.7); transform-origin: right bottom; }
             
-            /* 結算視窗微縮 */
             #game-over-modal, #vote-modal { width: 90%; max-height: 90%; overflow-y: auto; padding: 10px; border-radius: 8px; }
             #game-over-modal h2 { font-size: 18px; margin-bottom: 5px; }
             #end-reason-text { font-size: 12px; margin: 5px 0; }
@@ -142,7 +139,6 @@
             .end-btn-group { margin-top: 10px; gap: 10px; }
             .btn-action-end { padding: 6px 12px; font-size: 12px; }
             
-            /* 縮小贏家展示牌 */
             #end-winner-hand { min-height: 35px; margin: 5px 0; }
             #end-winner-hand .mj-card { width: 18px !important; height: 26px !important; font-size: 12px !important; border-bottom-width: 1px !important; margin: 0 1px !important; }
         }
@@ -152,7 +148,7 @@
 <body>
 
     <div id="lobby">
-        <h2>🀄️ 四人象棋麻將（旗艦對局）</h2>
+        <h2>🀄️ 四人象棋麻將（標準對局）</h2>
         <div class="form-group">
             <label>1. 輸入你的名字：</label>
             <input type="text" id="username" placeholder="例如：Wendy" value="玩家">
@@ -250,19 +246,19 @@
         <h2 id="end-winner-title">🏆 遊戲結束</h2>
         <p id="end-reason-text" style="font-size:16px; color:#fff; font-weight:bold; margin: 10px 0;"></p>
         
-        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; gap:4px; margin: 15px 0; min-height: 55px;"></div>
+        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; gap:4px; margin: 10px 0; min-height: 45px;"></div>
         
         <div id="end-scoreboard-list"></div>
         <div class="end-btn-group" id="normal-end-btns">
             <button class="btn-action-end" style="background:#4caf50;" onclick="continueGame()">繼續遊戲 (莊家連莊)</button>
             <button class="btn-action-end" style="background:#2196f3;" onclick="changeRoom()">更改房間</button>
         </div>
-        <div id="vote-wait-msg" class="hidden" style="color:#ffeb3b; font-size:18px; font-weight:bold; margin-top:20px;"></div>
+        <div id="vote-wait-msg" class="hidden" style="color:#ffeb3b; font-size:16px; font-weight:bold; margin-top:15px;"></div>
     </div>
 
     <div id="vote-modal" class="hidden">
         <h2 style="color: #ff5252; margin-top:0;">⚠️ 破產警告！</h2>
-        <p id="vote-text" style="font-size:18px; color:white; font-weight:bold; line-height:1.5;"></p>
+        <p id="vote-text" style="font-size:16px; color:white; font-weight:bold; line-height:1.5; margin-bottom: 15px;"></p>
         <div id="vote-btns" class="end-btn-group">
             <button class="btn-action-end" style="background:#ff9800;" onclick="submitVote('revive')">💰 借他 100 元續玩</button>
             <button class="btn-action-end" style="background:#e53935;" onclick="submitVote('kick')">👋 請他退出遊戲</button>
@@ -270,7 +266,7 @@
     </div>
 
     <script>
-        // ⚠️ 請一字不差換成你專屬的 Render 網址
+        // ⚠️ 請確認 SERVER_URL 為您的 Render 網址
         const SERVER_URL = "https://mahjong-server-nwmj.onrender.com"; 
         
         let socket;
@@ -359,10 +355,10 @@
                     let winnerData = playersStatus.find(p => p.name === winner);
                     if (winnerData) {
                         winnerData.melds.forEach(m => {
-                            let groupHtml = `<div class="meld-group" style="margin-right:6px; display:flex; gap:1px; background:rgba(0,0,0,0.5); padding:2px; border-radius:4px;">`;
+                            let groupHtml = `<div class="meld-group" style="margin-right:4px; display:flex; gap:1px; background:rgba(0,0,0,0.5); padding:2px; border-radius:4px;">`;
                             m.cards.forEach(c => {
                                 const colorClass = redCards.includes(c) ? 'red' : 'black';
-                                groupHtml += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:40px; font-size:16px; border-bottom-width:2px;">${c}</div>`;
+                                groupHtml += `<div class="mj-card no-hover ${colorClass}" style="width:24px; height:36px; font-size:14px; border-bottom-width:2px;">${c}</div>`;
                             });
                             groupHtml += `</div>`;
                             handDiv.innerHTML += groupHtml;
@@ -376,12 +372,12 @@
                         
                         handCards.forEach(c => {
                             const colorClass = redCards.includes(c) ? 'red' : 'black';
-                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:32px; height:46px; font-size:18px; border-bottom-width:3px; margin:0 2px;">${c}</div>`;
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:42px; font-size:16px; border-bottom-width:3px; margin:0 2px;">${c}</div>`;
                         });
                         
                         if (winCard) {
                             const colorClass = redCards.includes(winCard) ? 'red' : 'black';
-                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:32px; height:46px; font-size:18px; border: 3px solid #ffeb3b; box-shadow: 0 0 15px #ffeb3b; margin-left:12px; border-bottom-width:4px;">${winCard}</div>`;
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:42px; font-size:16px; border: 3px solid #ffeb3b; box-shadow: 0 0 10px #ffeb3b; margin-left:8px; border-bottom-width:4px;">${winCard}</div>`;
                         }
                     }
                 }
@@ -572,6 +568,7 @@
             socket.emit('submitVote', { roomCode: currentRoom, vote: voteType });
         }
 
+        // ✅ PRO: 改用純淨的 CSS 類別，絕對不會因為引號錯誤當機！
         function openChowMenu() {
             const listDiv = document.getElementById('chow-choices-list');
             listDiv.innerHTML = "";
@@ -579,8 +576,8 @@
                 let row = document.createElement('div');
                 row.className = "chow-choice-row";
                 choice.forEach(c => {
-                    const colorClass = redCards.includes(c) ? "style='color:red;'" : "style='color:black;'";
-                    row.innerHTML += `<span ${colorClass}>${c} </span>`;
+                    const colorClass = redCards.includes(c) ? "text-red" : "text-black";
+                    row.innerHTML += `<span class="${colorClass}">${c} </span>`;
                 });
                 row.onclick = () => sendAction('chow', choice);
                 listDiv.appendChild(row);
@@ -599,6 +596,7 @@
             });
         }
 
+        // ✅ 完全保留你的「繼續遊戲」安全邏輯，絕對不改壞！
         function continueGame() {
             document.getElementById('game-over-modal').classList.add('hidden');
             document.getElementById('game-container').classList.add('hidden');
