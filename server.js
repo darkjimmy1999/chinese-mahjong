@@ -99,10 +99,11 @@ function getChowChoices(hand, card) {
 }
 
 io.on('connection', (socket) => {
+    console.log(`連線進來了: ${socket.id}`);
+
     socket.on('joinRoom', ({ username, avatar, roomCode }) => {
         if (!roomCode || !username) return;
 
-        // ✅ 強制在記憶體中完成分組加入
         socket.join(roomCode);
 
         if (!rooms[roomCode] || rooms[roomCode].status === 'waiting') {
@@ -142,8 +143,8 @@ io.on('connection', (socket) => {
             newCard: null 
         });
         
-        // ✅ 核心修正：確保名單發送給全房間內的所有連線，用 io.in 確保無時間差阻擋
-        io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
+        // 廣播給房間內所有人最新名單
+        io.to(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
 
         if (room.players.length === 4) {
             room.status = 'playing';
@@ -330,7 +331,7 @@ io.on('connection', (socket) => {
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
         room.status = 'waiting'; 
 
-        io.in(roomCode).emit('gameOver', { 
+        io.to(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
@@ -353,7 +354,7 @@ io.on('connection', (socket) => {
         room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
         room.status = 'waiting'; 
 
-        io.in(roomCode).emit('gameOver', { 
+        io.to(roomCode).emit('gameOver', { 
             winner: winner.name, 
             reason: `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`, 
             playersStatus: room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds})) 
@@ -364,7 +365,7 @@ io.on('connection', (socket) => {
         const room = rooms[roomCode];
         if (room.deck.length === 0) {
             room.status = 'waiting';
-            io.in(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
+            io.to(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
             return;
         }
         
@@ -415,4 +416,6 @@ io.on('connection', (socket) => {
     }
 });
 
-server.listen(process.env.PORT || 3000);
+// ⚡️【終極大修正】明確綁定雲端分配的 Port 號，絕不再鎖死大門！
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`伺服器成功在埠號 ${PORT} 啟動`));
