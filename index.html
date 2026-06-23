@@ -74,7 +74,8 @@
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
         
-        #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 460px; max-width: 90%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
+        /* 結算面板調整，加入贏家手牌展示區 */
+        #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 550px; max-width: 95%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
         #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
         .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
         .end-btn-group { display: flex; justify-content: center; gap: 20px; margin-top: 25px; }
@@ -182,9 +183,13 @@
     <div id="game-over-modal" class="hidden">
         <h2 id="end-winner-title">🏆 遊戲結束</h2>
         <p id="end-reason-text" style="font-size:16px; color:#fff; font-weight:bold; margin: 10px 0;"></p>
+        
+        <!-- ✅ 新增：贏家公開攤牌展示區 -->
+        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; gap:4px; margin: 15px 0; min-height: 55px;"></div>
+        
         <div id="end-scoreboard-list"></div>
         <div class="end-btn-group">
-            <button class="btn-action-end" style="background:#4caf50;" onclick="continueGame()">繼續遊戲 (下局)</button>
+            <button class="btn-action-end" style="background:#4caf50;" onclick="continueGame()">繼續遊戲 (莊家連莊)</button>
             <button class="btn-action-end" style="background:#2196f3;" onclick="changeRoom()">更改房間</button>
         </div>
     </div>
@@ -201,7 +206,7 @@
         let globalMyHand = [];
         let globalNewCard = null;
         
-        // ✅【核心修正 3】前端正確區分紅黑車馬為：俥、傌
+        // ✅ 修正前端紅字陣列對齊：俥、傌
         const redCards = ['帥', '仕', '相', '俥', '傌', '炮', '兵'];
 
         window.addEventListener("DOMContentLoaded", () => {
@@ -267,13 +272,52 @@
                 document.getElementById('interception-modal').classList.remove('hidden');
             });
 
-            socket.on('gameOver', ({ winner, reason, playersStatus }) => {
+            // ✅ 結算加入「贏家手牌攤牌 + 黃金框框」
+            socket.on('gameOver', ({ winner, reason, playersStatus, winCard }) => {
                 document.getElementById('interception-modal').classList.add('hidden');
                 document.getElementById('chow-menu-modal').classList.add('hidden');
                 
                 document.getElementById('end-winner-title').innerText = winner === '流局' ? '🀄️ 局末流局' : `🏆 贏家：${winner}`;
                 document.getElementById('end-reason-text').innerText = reason;
                 
+                // 渲染贏家的攤牌區
+                const handDiv = document.getElementById('end-winner-hand');
+                handDiv.innerHTML = "";
+                
+                if (winner !== '流局') {
+                    let winnerData = playersStatus.find(p => p.name === winner);
+                    if (winnerData) {
+                        // 畫出吃碰槓的牌
+                        winnerData.melds.forEach(m => {
+                            let groupHtml = `<div class="meld-group" style="margin-right:6px; display:flex; gap:1px; background:rgba(0,0,0,0.5); padding:2px; border-radius:4px;">`;
+                            m.cards.forEach(c => {
+                                const colorClass = redCards.includes(c) ? 'red' : 'black';
+                                groupHtml += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:40px; font-size:16px; border-bottom-width:2px;">${c}</div>`;
+                            });
+                            groupHtml += `</div>`;
+                            handDiv.innerHTML += groupHtml;
+                        });
+                        
+                        // 畫出手牌（先剔除一張用來當作致勝黃框的牌）
+                        let handCards = [...winnerData.hand];
+                        if (winCard) {
+                            let wcIdx = handCards.indexOf(winCard);
+                            if (wcIdx !== -1) handCards.splice(wcIdx, 1);
+                        }
+                        
+                        handCards.forEach(c => {
+                            const colorClass = redCards.includes(c) ? 'red' : 'black';
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:32px; height:46px; font-size:18px; border-bottom-width:3px; margin:0 2px;">${c}</div>`;
+                        });
+                        
+                        // ✅ 獨立畫出致勝的黃色框框大牌！
+                        if (winCard) {
+                            const colorClass = redCards.includes(winCard) ? 'red' : 'black';
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:32px; height:46px; font-size:18px; border: 3px solid #ffeb3b; box-shadow: 0 0 15px #ffeb3b; margin-left:12px; border-bottom-width:4px;">${winCard}</div>`;
+                        }
+                    }
+                }
+
                 const listDiv = document.getElementById('end-scoreboard-list');
                 listDiv.innerHTML = "";
                 playersStatus.forEach(p => {
@@ -444,7 +488,7 @@
             const username = document.getElementById('username').value.trim();
             if (socket) {
                 socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode: currentRoom });
-                document.getElementById('wait-msg').innerText = `已就緒！正在等待其他玩家點擊「繼續遊戲」...\n房號：${currentRoom}`;
+                document.getElementById('wait-msg').innerText = `已就緒！等待其他人點擊「繼續遊戲」...\n（由上局贏家優先開局！）`;
             } else {
                 connectToGame();
             }
