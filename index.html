@@ -8,7 +8,14 @@
         body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow-x: hidden; overflow-y: auto; }
         .hidden { display: none !important; }
         
-        #lobby { max-width: 450px; margin: 30px auto; background: white; padding: 25px; border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); text-align: left; position: relative; z-index: 100; }
+        /* ✅ 修正 1：大廳獨立滾動。保證手機轉橫時可以滑動點擊「進入房間」按鈕！ */
+        #lobby { 
+            max-width: 450px; margin: 30px auto; background: white; padding: 25px; 
+            border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); 
+            text-align: left; position: relative; z-index: 100;
+            max-height: 85vh; overflow-y: auto; /* 👈 解救卡死的關鍵 */
+            -webkit-overflow-scrolling: touch; 
+        }
         #lobby h2 { text-align: center; color: #1b4d22; margin-top: 0; }
         .form-group { margin-bottom: 15px; }
         .form-group label { font-weight: bold; display: block; margin-bottom: 5px; }
@@ -20,7 +27,7 @@
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
-        /* 💻 電腦/平板版預設牌桌 (維持完美現狀) */
+        /* 💻 電腦/平板版預設牌桌 */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
@@ -40,6 +47,7 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
+        /* 麻將牌 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
@@ -80,96 +88,82 @@
 
         #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
 
-        /* 📱 直立翻轉提示 */
-        @media screen and (max-width: 850px) and (orientation: portrait) {
-            body::before {
-                content: "🀄️ 請將手機旋轉至【橫向】以進行遊戲\A\A（轉橫後版面就會正常囉！）";
-                white-space: pre-wrap;
-                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-                background: #1b4d22; color: #ffeb3b; display: flex; justify-content: center; align-items: center;
-                font-size: 22px; font-weight: bold; z-index: 9999; padding: 20px; text-align: center; line-height: 1.6;
-            }
-            #lobby, #game-container, #game-over-modal, #vote-modal { display: none !important; }
-        }
-
-        /* 📱 ✅【終極解決方案】手機橫向物理級防重疊，採用三直行設計 */
+        /* 📱 ✅【終極修復】手機橫向佈局：採用絕對百分比與溢出防護 */
         @media screen and (max-width: 950px) and (orientation: landscape) {
             html, body {
-                position: fixed !important; 
-                top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
-                width: 100vw !important; height: 100svh !important;
-                padding: 0 !important; margin: 0 !important;
-                overflow: hidden !important;
-                background: #1b4d22 !important;
+                height: 100%; height: -webkit-fill-available; width: 100%;
+                overflow: hidden !important; position: fixed !important; 
+                margin: 0 !important; padding: 0 !important; background: #1b4d22;
                 touch-action: none !important; 
             }
             
             #game-container {
-                position: absolute !important;
-                top: env(safe-area-inset-top, 0px) !important;
-                left: env(safe-area-inset-left, 0px) !important;
-                right: env(safe-area-inset-right, 0px) !important;
-                bottom: env(safe-area-inset-bottom, 0px) !important;
-                width: auto !important; 
-                height: auto !important;
-                max-width: none !important;
+                position: absolute !important; top: 0 !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+                width: 100% !important; height: 100% !important;
                 display: grid !important;
-                /* ✅ 關鍵修改：將畫面切成左、中、右三個絕對不重疊的區塊 */
-                grid-template-rows: 20svh 1fr 30svh !important;
-                grid-template-columns: 14vw 1fr 14vw !important;
-                gap: 1vw !important; 
-                padding: 1vw !important;
+                /* ✅ 修正 2：採用嚴格的 % 分配，絕不允許被卡牌撐爆！ */
+                grid-template-rows: 20% 55% 25% !important;
+                grid-template-columns: 14% 72% 14% !important;
+                gap: 0 !important; 
+                padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+                padding-left: env(safe-area-inset-left, 0px) !important;
+                padding-right: env(safe-area-inset-right, 0px) !important;
                 box-sizing: border-box !important;
             }
 
-            .table-center { padding: 1vw !important; border-width: 0.3svh !important; border-radius: 2svh !important; box-shadow: none !important; }
-            .seat-block { padding: 1vw !important; border-radius: 1.5svh !important; justify-content: center !important; }
+            /* ✅ 修正 3：加入 min-height: 0 防護罩，強制網格不會被內容撐破邊界 */
+            .seat-block, .table-center, .position-me { 
+                min-height: 0 !important; 
+                min-width: 0 !important; 
+                margin: 2px !important;
+            }
+
+            .table-center { border-width: 2px !important; border-radius: 12px !important; box-shadow: none !important; }
+            .seat-block { border-radius: 6px !important; }
             
-            /* ✅ 隔離邊界：指定每個人在網格中的精準位置，防越線 */
-            .position-top { grid-area: 1 / 2 / 2 / 3 !important; flex-direction: row !important; gap: 2vw !important; }
-            .position-left { grid-area: 1 / 1 / 4 / 2 !important; padding: 1vw !important; }  /* 左邊全包 */
-            .position-right { grid-area: 1 / 3 / 4 / 4 !important; padding: 1vw !important; } /* 右邊全包 */
+            .position-top { grid-area: 1 / 2 / 2 / 3 !important; flex-direction: row !important; gap: 10px !important; }
+            .position-left { grid-area: 1 / 1 / 4 / 2 !important; }
+            .position-right { grid-area: 1 / 3 / 4 / 4 !important; }
             
             .position-me { 
-                grid-area: 3 / 2 / 4 / 3 !important; /* ✅ 你的區域只佔中間，不再拉滿全螢幕，徹底解決重疊！ */
-                padding: 1svh 2vw !important; 
-                border-radius: 2svh !important; 
+                grid-area: 3 / 2 / 4 / 3 !important; 
                 background: rgba(0,0,0,0.6) !important; 
-                justify-content: space-around !important; 
+                border-radius: 8px !important;
+                display: flex !important; flex-direction: column !important; justify-content: space-evenly !important; 
+                padding: 2px 10px !important;
             }
             
-            /* 卡牌等比微調縮小 */
-            .mj-card { width: 5.2svh !important; height: 8svh !important; font-size: 3.5svh !important; border-bottom-width: 0.6svh !important; border-radius: 0.5svh !important; margin: 0 0.2vw !important; }
-            .mj-card.new-draw-card { margin-left: 1.5vw !important; border-bottom-width: 0.8svh !important; }
-            .mj-back { width: 3.8svh !important; height: 5.8svh !important; border-bottom-width: 0.4svh !important; border-radius: 0.5svh !important; }
-            .pool-area .mj-card, .meld-group .mj-card { width: 4.2svh !important; height: 6.2svh !important; font-size: 2.8svh !important; border-bottom-width: 0.4svh !important; }
+            /* 將卡牌尺寸調小，確保絕對塞得進 25% 的底部區域 */
+            .mj-card { width: 26px !important; height: 38px !important; font-size: 16px !important; border-bottom-width: 2px !important; border-radius: 3px !important; margin: 0 1px !important; }
+            .mj-card.new-draw-card { margin-left: 6px !important; border-bottom-width: 3px !important; }
+            .mj-back { width: 16px !important; height: 24px !important; border-bottom-width: 2px !important; border-radius: 2px !important; }
+            .pool-area .mj-card, .meld-group .mj-card { width: 22px !important; height: 32px !important; font-size: 14px !important; border-bottom-width: 2px !important; }
 
-            .player-avatar { font-size: 4svh !important; margin-bottom: 0 !important; }
-            .player-name { font-size: 2.2svh !important; }
-            .player-money { font-size: 2svh !important; padding: 0.3svh 1vw !important; margin-top: 0.3svh !important; border-radius: 2svh !important; }
-            #my-turn-status { font-size: 2.2svh !important; margin-left: 2vw !important; }
+            .player-avatar { font-size: 18px !important; margin-bottom: 0 !important; }
+            .player-name { font-size: 10px !important; }
+            .player-money { font-size: 10px !important; padding: 1px 4px !important; margin-top: 1px !important; }
+            #my-turn-status { font-size: 10px !important; margin-left: 10px !important; }
 
-            .horizontal-cards, .vertical-cards, .my-hand-cards { gap: 0.5vw !important; }
-            /* ✅ 讓手牌置中整齊 */
-            .me-bottom-layout { align-items: center !important; flex: 1 !important; margin-top: 0.5svh !important; justify-content: center !important; }
+            .horizontal-cards, .vertical-cards, .my-hand-cards { gap: 1px !important; }
+            .me-bottom-layout { align-items: center !important; justify-content: center !important; flex: none !important; width: 100% !important; margin: 0 !important;}
             
-            .pool-area { max-height: 100% !important; overflow: hidden !important; gap: 0.5vw !important; align-content: center !important; }
-            .deck-info { font-size: 2.2svh !important; padding: 0.5svh 2vw !important; margin-bottom: 1svh !important; border-radius: 3svh !important; }
+            .pool-area { max-height: 100% !important; max-width: 100% !important; overflow-y: auto !important; align-content: flex-start !important; gap: 2px !important; }
+            .deck-info { font-size: 11px !important; padding: 2px 8px !important; margin-bottom: 4px !important; border-radius: 10px !important; }
             
-            #focus-play-box { top: -5svh !important; transform: scale(0.7) !important; padding: 1svh 2vw !important; }
-            #interception-modal { bottom: 32svh !important; right: 2vw !important; padding: 1svh 2vw !important; transform: scale(0.8) !important; transform-origin: right bottom !important; border-width: 1px !important; }
-            .ctrl-btn { font-size: 2.8svh !important; padding: 1svh 3vw !important; border-radius: 1svh !important; }
-            #chow-menu-modal { bottom: 44svh !important; right: 2vw !important; padding: 1.5svh !important; transform: scale(0.8) !important; transform-origin: right bottom !important; }
+            #focus-play-box { top: -20px !important; transform: scale(0.6) !important; padding: 4px 8px !important; }
+            #interception-modal { bottom: 25% !important; right: 5% !important; padding: 6px 12px !important; transform: scale(0.85) !important; transform-origin: bottom right !important; border-width: 1px !important; }
+            .ctrl-btn { font-size: 14px !important; padding: 6px 14px !important; border-radius: 4px !important; }
+            #chow-menu-modal { bottom: 35% !important; right: 5% !important; padding: 8px !important; transform: scale(0.85) !important; transform-origin: bottom right !important; }
             
-            #game-over-modal, #vote-modal { width: 85vw !important; max-height: 90svh !important; overflow-y: auto !important; padding: 3svh !important; border-radius: 2svh !important; }
-            #game-over-modal h2 { font-size: 4.5svh !important; margin-bottom: 1.5svh !important; }
-            #end-reason-text { font-size: 2.5svh !important; margin: 1svh 0 !important; }
-            .score-board-row { padding: 1svh 2vw !important; font-size: 2.5svh !important; margin: 0.5svh 0 !important; }
-            .end-btn-group { margin-top: 2svh !important; gap: 3vw !important; }
-            .btn-action-end { padding: 1.5svh 3vw !important; font-size: 2.5svh !important; border-radius: 1svh !important; }
+            #game-over-modal, #vote-modal { width: 90% !important; max-height: 90% !important; overflow-y: auto !important; padding: 15px !important; border-radius: 12px !important; }
+            #game-over-modal h2 { font-size: 20px !important; margin-bottom: 5px !important; }
+            #end-reason-text { font-size: 12px !important; margin: 5px 0 !important; }
+            .score-board-row { padding: 4px 10px !important; font-size: 12px !important; margin: 2px 0 !important; }
+            .end-btn-group { margin-top: 10px !important; gap: 10px !important; }
+            .btn-action-end { padding: 6px 12px !important; font-size: 12px !important; border-radius: 4px !important; }
             
-            #end-winner-hand { min-height: 8svh !important; margin: 1.5svh 0 !important; }
-            #end-winner-hand .mj-card { width: 4.2svh !important; height: 6.2svh !important; font-size: 2.8svh !important; border-bottom-width: 0.4svh !important; margin: 0 0.2vw !important; }
+            #end-winner-hand { min-height: 35px !important; margin: 5px 0 !important; }
+            #end-winner-hand .mj-card { width: 22px !important; height: 32px !important; font-size: 14px !important; border-bottom-width: 2px !important; margin: 0 1px !important; }
         }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
