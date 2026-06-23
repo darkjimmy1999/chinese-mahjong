@@ -3,19 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上四人象棋麻將（Kahoot動物對局版）</title>
+    <title>線上四人象棋麻將（動物大對局版）</title>
     <style>
         body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow: hidden; }
         .hidden { display: none !important; }
         
-        /* 🎨 Kahoot 風格大廳 */
+        /* Kahoot 風格大廳 */
         #lobby { max-width: 500px; margin: 30px auto; background: white; padding: 25px; border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); text-align: left; }
         #lobby h2 { text-align: center; color: #1b4d22; margin-top: 0; }
         .form-group { margin-bottom: 15px; }
         .form-group label { font-weight: bold; display: block; margin-bottom: 5px; }
         input[type="text"] { width: 93%; padding: 12px; font-size: 16px; border: 2px solid #ccc; border-radius: 8px; }
         
-        /* 動物頭像選單 */
         .avatar-selector { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 10px 0; }
         .avatar-box { font-size: 30px; text-align: center; padding: 10px; background: #f0f0f0; border: 3px solid transparent; border-radius: 12px; cursor: pointer; transition: 0.2s; user-select: none; }
         .avatar-box:hover { background: #e0e0e0; transform: scale(1.1); }
@@ -26,16 +25,14 @@
         /* 🕹 擬真立體牌桌佈局 */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
-        /* 桌中央與放大出牌提示 */
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
         .pool-area { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; max-width: 380px; min-height: 110px; align-content: center; }
         .deck-info { font-size: 14px; background: rgba(0,0,0,0.5); padding: 5px 14px; border-radius: 20px; margin-bottom: 8px; font-weight: bold; color: #ffeb3b; }
 
-        /* 🔥 超級明顯：目前剛打出來的放大牌提示 */
-        #focus-play-box { position: absolute; top: -45px; background: rgba(0,0,0,0.85); border: 2px solid #ffeb3b; border-radius: 10px; padding: 8px 15px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 15px #ffeb3b; animation: pulse 1s infinite alternate; }
-        @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.05); } }
+        /* 出牌巨型放大提示框 */
+        #focus-play-box { position: absolute; top: -45px; background: rgba(0,0,0,0.85); border: 2px solid #ffeb3b; border-radius: 10px; padding: 8px 15px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 15px #ffeb3b; }
 
-        /* 四方座位與金額系統 */
+        /* 座位區與點數 */
         .seat-block { display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; box-sizing: border-box; border: 2px solid transparent; }
         .seat-block.active { border-color: #ffeb3b; box-shadow: 0 0 20px #ffeb3b; background: rgba(255,235,59,0.15); }
         .player-avatar { font-size: 32px; margin-bottom: 2px; }
@@ -47,32 +44,41 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
-        /* 🀄️ 麻將與蓋牌 */
+        /* 麻將基本樣式 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover { transform: translateY(-10px); background: #fff; }
         .mj-back { width: 26px; height: 38px; background: #cb6b34; border: 2px solid #5d4037; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+
+        /* ✨👑 重磅功能：最新摸進來的牌框（金黃色粗框發光、稍微隔開） */
+        .mj-card.new-draw-card {
+            border: 3px solid #ffeb3b !important;
+            border-bottom-width: 6px !important;
+            box-shadow: 0 0 15px #ffeb3b !important;
+            margin-left: 12px; /* 刻意跟前面的牌隔開，讓你一眼看出是新牌！ */
+            background: #ffffff;
+        }
         
         .horizontal-cards { display: flex; gap: 3px; }
         .vertical-cards { display: flex; flex-direction: column; gap: 3px; }
 
-        /* 倒在面前的亮牌區 */
+        /* 亮牌區（吃碰槓） */
         .meld-row { display: flex; gap: 10px; margin-top: 5px; }
         .meld-group { display: flex; gap: 1px; background: rgba(0,0,0,0.3); padding: 2px; border-radius: 4px; }
         .meld-group .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
         .meld-group .mj-card:hover { transform: none; }
 
         .me-bottom-layout { display: flex; justify-content: space-between; align-items: center; width: 100%; }
-        .my-hand-cards { display: flex; gap: 8px; }
+        .my-hand-cards { display: flex; gap: 6px; }
         .pool-area .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
 
-        /* 吃碰槓 操控彈窗 */
+        /* 操作按鈕 */
         #interception-modal { position: fixed; bottom: 185px; right: 40px; background: rgba(0,0,0,0.9); border: 2px solid #ff9800; padding: 12px 24px; border-radius: 12px; display: flex; gap: 12px; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
         .ctrl-btn { font-size: 18px; padding: 8px 24px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; }
         .btn-win { background: #e53935; }
         .btn-pong { background: #ff9800; }
         .btn-chow { background: #2196f3; }
-        .btn-kong { background: #9c27b0; } /* 槓牌紫色 */
+        .btn-kong { background: #9c27b0; }
         .btn-pass { background: #616161; }
         
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
@@ -83,9 +89,8 @@
 </head>
 <body>
 
-    <!-- 🎨 大廳：選名字與可愛動物頭像 -->
     <div id="lobby">
-        <h2>🀄️ 四人象棋麻將（動物大湊桌）</h2>
+        <h2>🀄️ 四人象棋麻將（動物大對局）</h2>
         <div class="form-group">
             <label>1. 輸入你的名字：</label>
             <input type="text" id="username" placeholder="例如：Wendy" value="玩家">
@@ -113,10 +118,9 @@
         <div id="wait-msg" style="margin-top: 15px; color: #666; text-align: center; font-weight: bold;"></div>
     </div>
 
-    <!-- 🕹 核心立體遊戲畫面 -->
+    <!-- 核心立體遊戲畫面 -->
     <div id="game-container" class="hidden">
-        
-        <!-- 對家 (Top) -->
+        <!-- 對家 -->
         <div id="seat-top" class="seat-block position-top">
             <div class="player-avatar" id="avatar-top">🐱</div>
             <div>
@@ -127,7 +131,7 @@
             <div class="meld-row" id="melds-top"></div>
         </div>
 
-        <!-- 上家 (Left) -->
+        <!-- 上家 -->
         <div id="seat-left" class="seat-block position-left">
             <div class="player-avatar" id="avatar-left">🐱</div>
             <div class="player-name" id="name-left">上家</div>
@@ -136,19 +140,17 @@
             <div class="meld-row" id="melds-left" style="flex-direction: column;"></div>
         </div>
 
-        <!-- 桌中央牌河 -->
+        <!-- 牌河 -->
         <div class="table-center">
-            <!-- 🔊 出牌極度明顯放大提示框 -->
             <div id="focus-play-box" class="hidden">
                 <span id="focus-player-title" style="font-size:14px;color:#fff;">有人打出</span>
                 <div id="focus-card-render" class="mj-card" style="width:36px;height:52px;font-size:22px;cursor:default;"></div>
             </div>
-
             <div class="deck-info">剩餘牌數: <span id="deck-count">--</span> 張</div>
             <div id="card-pool" class="pool-area"></div>
         </div>
 
-        <!-- 下家 (Right) -->
+        <!-- 下家 -->
         <div id="seat-right" class="seat-block position-right">
             <div class="player-avatar" id="avatar-right">🐱</div>
             <div class="player-name" id="name-right">下家</div>
@@ -157,7 +159,7 @@
             <div class="meld-row" id="melds-right" style="flex-direction: column;"></div>
         </div>
 
-        <!-- 自己 (Bottom) -->
+        <!-- 自己 -->
         <div id="seat-me" class="position-me">
             <div style="display:flex; align-items:center; gap:10px;">
                 <span class="player-avatar" id="avatar-me">🐱</span>
@@ -172,11 +174,12 @@
             <div style="margin-top: 3px; display:flex; gap:10px; justify-content:center;">
                 <button id="zimo-btn" class="ctrl-btn btn-win hidden" onclick="declareZimo()">🎉 自摸胡牌</button>
                 <button id="ankong-btn" class="ctrl-btn btn-kong hidden" onclick="checkAndAnKong()">暗槓手牌</button>
+                <button id="continue-btn" class="ctrl-btn btn-chow hidden" style="background:#4caf50;" onclick="location.reload()">下一把 🔄</button>
             </div>
         </div>
     </div>
 
-    <!-- 🎴 吃碰槓胡 操控彈窗 -->
+    <!-- 吃碰槓胡 面板 -->
     <div id="interception-modal" class="hidden">
         <button id="action-win" class="ctrl-btn btn-win hidden" onclick="sendAction('win')">胡牌</button>
         <button id="action-kong" class="ctrl-btn btn-kong hidden" onclick="sendAction('kong')">槓</button>
@@ -189,11 +192,11 @@
     <div id="chow-menu-modal" class="hidden">
         <h4 style="margin:0 0 5px 0;">選擇吃的組合:</h4>
         <div id="chow-choices-list"></div>
-        <button onclick="document.getElementById('chow-menu-modal').classList.add('hidden')" style="margin-top:5px;">關閉</button>
+        <button onclick="document.getElementById('chow-menu-modal').classList.add('hidden')">關閉</button>
     </div>
 
     <script>
-        // ⚠️ 請記得改成你專屬的 Render 網址！
+        // ⚠️ 請一字不差換成你專屬的 Render 網址（保留引號與分號）
         const SERVER_URL = "https://mahjong-server-nwmj.onrender.com"; 
         
         let socket;
@@ -202,6 +205,7 @@
         let selectedAvatar = "🐱";
         let savedChowChoices = [];
         let globalMyHand = [];
+        let globalNewCard = null;
         const redCards = ['帥', '仕', '相', '車', '馬', '炮', '兵'];
 
         function selectAvatar(element) {
@@ -254,7 +258,7 @@
             socket.on('gameOver', ({ winner, reason, playersStatus }) => {
                 let scoreText = playersStatus.map(p => `${p.name}: $${p.money}`).join('\n');
                 alert(`🎉 遊戲結束 🎉\n【贏家】：${winner}\n【結算】：${reason}\n\n📊 目前全場金額：\n${scoreText}`);
-                // 不重新整理，保留畫面讓下一把可以看，只把大廳解開或手動點擊才重連
+                document.getElementById('continue-btn').classList.remove('hidden'); // 顯示下一把按鈕
             });
 
             socket.on('errorMessage', (msg) => alert(msg));
@@ -263,8 +267,10 @@
         function updateUI(data) {
             myTurn = data.isMyTurn;
             globalMyHand = data.myHand;
+            globalNewCard = data.newCard; // 後端傳來的最新摸牌
             document.getElementById('deck-count').innerText = data.deckCount;
             document.getElementById('chow-menu-modal').classList.add('hidden');
+            document.getElementById('continue-btn').classList.add('hidden');
 
             const myIdx = data.myIndex;
             const pStatus = data.playersStatus;
@@ -274,21 +280,17 @@
             const idxTop = (myIdx + 2) % 4;
             const idxLeft = (myIdx + 3) % 4;
 
-            // 渲染東南西北四方頭像與金額金額
             setSeatData('me', pStatus[idxMe], idxMe === data.turnIndex);
             setSeatData('right', pStatus[idxRight], idxRight === data.turnIndex, 'vertical');
             setSeatData('top', pStatus[idxTop], idxTop === data.turnIndex, 'horizontal');
             setSeatData('left', pStatus[idxLeft], idxLeft === data.turnIndex, 'vertical');
 
-            // 顯示文字提示
             document.getElementById('my-turn-status').innerText = myTurn ? "📢 輪到你的回合，請點選一張牌打出！" : `等待 ${pStatus[data.turnIndex].name} 出牌...`;
 
-            // 🔊 頂級放大出牌提示：是誰出牌超明顯！
             const focusBox = document.getElementById('focus-play-box');
             if (data.lastPlayed) {
                 let shooter = pStatus[data.lastPlayed.playerIndex];
                 document.getElementById('focus-player-title').innerText = `${shooter.avatar} ${shooter.name} 打出`;
-                
                 const cardRender = document.getElementById('focus-card-render');
                 cardRender.innerText = data.lastPlayed.card;
                 cardRender.className = `mj-card ${redCards.includes(data.lastPlayed.card) ? 'red' : 'black'}`;
@@ -297,19 +299,27 @@
                 focusBox.classList.add('hidden');
             }
 
-            // 渲染我的真實手牌
+            // 🀄️ 渲染我的手牌（完美包含新牌隔離框邏輯）
             const myHandDiv = document.getElementById('my-hand');
             myHandDiv.innerHTML = "";
+            
+            let hasRenderedNewCard = false;
             data.myHand.forEach((card, index) => {
                 const colorClass = redCards.includes(card) ? 'red' : 'black';
-                myHandDiv.innerHTML += `<div class="mj-card ${colorClass}" onclick="playCard(${index})">${card}</div>`;
+                
+                // 核心邏輯：如果是第8張牌，且名字跟後端標記的newCard一樣，且全場還沒渲染過新牌框，就給它亮黃框！
+                let isNewStyle = "";
+                if (myTurn && data.myHand.length === 8 && card === globalNewCard && !hasRenderedNewCard && index === data.myHand.length - 1) {
+                    isNewStyle = "new-draw-card";
+                    hasRenderedNewCard = true;
+                }
+                
+                myHandDiv.innerHTML += `<div class="mj-card ${colorClass} ${isNewStyle}" onclick="playCard(${index})">${card}</div>`;
             });
 
-            // 自摸按鈕控制
             if (myTurn && data.myHand.length === 8) document.getElementById('zimo-btn').classList.remove('hidden');
             else document.getElementById('zimo-btn').classList.add('hidden');
 
-            // 檢查手牌是否有 4 張一樣的，可以按暗槓
             let hasAnKong = false;
             let uniqueCards = [...new Set(data.myHand)];
             uniqueCards.forEach(c => {
@@ -317,14 +327,6 @@
             });
             if(myTurn && hasAnKong) document.getElementById('ankong-btn').classList.remove('hidden');
             else document.getElementById('ankong-btn').classList.add('hidden');
-
-            // 渲染中央牌河
-            const poolDiv = document.getElementById('card-pool');
-            poolDiv.innerHTML = "";
-            data.pool.forEach((card, idx) => {
-                const colorClass = redCards.includes(card) ? 'red' : 'black';
-                poolDiv.innerHTML += `<div class="mj-card ${colorClass}">${card}</div>`;
-            });
         }
 
         function setSeatData(pos, status, isActive, type = 'horizontal') {
