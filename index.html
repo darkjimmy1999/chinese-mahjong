@@ -25,17 +25,22 @@
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
-        /* 🎵 音效控制按鈕 */
-        #audio-ctrl {
-            position: absolute; top: 15px; right: 15px;
+        /* ✅ 獨立的音頻按鈕：強制釘在最角落，不再使用 flex 排版干擾牌桌 */
+        .audio-btn {
+            position: fixed; top: 10px;
             background: rgba(0,0,0,0.7); color: #ffeb3b;
-            border: 2px solid #ffeb3b; padding: 6px 14px;
-            border-radius: 20px; font-weight: bold; cursor: pointer;
-            z-index: 1000; font-size: 14px; transition: 0.2s;
+            border: 1px solid #ffeb3b; padding: 6px 12px;
+            border-radius: 16px; font-weight: bold; cursor: pointer;
+            font-size: 13px; z-index: 1000; transition: 0.2s; outline: none;
         }
-        #audio-ctrl:hover { background: #ffeb3b; color: #000; }
+        #btn-bgm { left: 10px; }
+        #btn-sfx { right: 10px; }
 
-        /* 💻 電腦/平板版預設牌桌 (絕對不影響，完美保留) */
+        .audio-btn:hover { background: #ffeb3b; color: #000; }
+        .audio-btn.muted { color: #888; border-color: #888; text-decoration: line-through; }
+        .audio-btn.muted:hover { background: #444; color: #ccc; }
+
+        /* 💻 電腦/平板版預設牌桌 */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
         
         .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
@@ -44,13 +49,14 @@
 
         #focus-play-box { position: absolute; top: -45px; background: rgba(0,0,0,0.85); border: 2px solid #ffeb3b; border-radius: 10px; padding: 8px 15px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 15px #ffeb3b; z-index: 50; }
 
+        /* 確保電腦版的對家不會被上方的音樂按鈕蓋住 */
         .seat-block { display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; box-sizing: border-box; border: 2px solid transparent; }
         .seat-block.active { border-color: #ffeb3b; box-shadow: 0 0 20px #ffeb3b; background: rgba(255,235,59,0.15); }
         .player-avatar { font-size: 32px; margin-bottom: 2px; }
         .player-name { font-size: 14px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
         .player-money { font-size: 13px; color: #00ffcc; font-weight: bold; background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; margin-top: 3px; }
 
-        .position-top { grid-area: 1 / 2 / 2 / 3; flex-direction: row; gap: 30px; }
+        .position-top { grid-area: 1 / 2 / 2 / 3; flex-direction: row; gap: 30px; margin-top: 30px; /* 電腦版讓出空間 */ }
         .position-left { grid-area: 2 / 1 / 3 / 2; }
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
@@ -95,7 +101,6 @@
 
         #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
 
-        /* 📱 手機防呆：若螢幕小且為橫向，強制要求翻轉直立 */
         @media screen and (max-width: 750px) and (orientation: landscape) {
             body::before {
                 content: "🀄️ 請將手機旋轉至【直立】以獲得最佳單手遊玩體驗\A\A（轉直後版面就會完美呈現囉！）";
@@ -106,13 +111,13 @@
             #lobby, #game-container, #game-over-modal, #vote-modal { display: none !important; }
         }
 
-        /* 📱 ✅【全新視覺】手機直立沉浸版佈局 (保留四方位置直覺感，大於750px的電腦平板不受影響) */
         @media screen and (max-width: 750px) and (orientation: portrait) {
             html, body {
                 position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
                 width: 100vw !important; height: 100svh !important;
                 padding: 0 !important; margin: 0 !important; overflow: hidden !important; 
                 background: #1b4d22 !important; touch-action: none !important; 
+                overscroll-behavior: none !important;
             }
             
             #game-container {
@@ -120,39 +125,28 @@
                 top: env(safe-area-inset-top, 0px) !important; left: env(safe-area-inset-left, 0px) !important;
                 right: env(safe-area-inset-right, 0px) !important; bottom: env(safe-area-inset-bottom, 0px) !important;
                 width: auto !important; height: auto !important; max-width: none !important; display: grid !important;
-                
-                /* 直立黃金比例切割：頂部(對家) / 中間(左右家與牌河) / 底部(自己) */
-                grid-template-rows: 15svh 1fr 28svh !important;
-                grid-template-columns: 20vw 1fr 20vw !important;
+                grid-template-rows: 15svh 1fr 28svh !important; grid-template-columns: 20vw 1fr 20vw !important;
                 gap: 1vw !important; padding: 1vw !important; box-sizing: border-box !important;
             }
 
-            /* 中間區域隱藏邊框，營造無縫大桌面的感覺 */
             .table-center { grid-area: 2 / 2 / 3 / 3 !important; padding: 2vw !important; border-width: 0 !important; background: transparent !important; box-shadow: none !important; }
-            
             .seat-block { padding: 0 !important; border: none !important; background: transparent !important; }
             .seat-block.active { background: rgba(255,235,59,0.15) !important; border-radius: 8px !important; box-shadow: 0 0 10px #ffeb3b !important; padding: 2px !important; }
             
-            /* 四個方位的精準定位 */
-            .position-top { grid-area: 1 / 1 / 2 / 4 !important; flex-direction: row !important; justify-content: center !important; align-items: flex-start !important; gap: 3vw !important; padding-top: 2svh !important;}
+            /* 手機版：對家的資訊置中，不會被左右的音頻按鈕擋到 */
+            .position-top { grid-area: 1 / 1 / 2 / 4 !important; flex-direction: row !important; justify-content: center !important; align-items: flex-start !important; gap: 3vw !important; padding-top: 2svh !important; margin-top: 0 !important; }
             .position-left { grid-area: 2 / 1 / 3 / 2 !important; justify-content: center !important; }
             .position-right { grid-area: 2 / 3 / 3 / 4 !important; justify-content: center !important; }
-            
-            /* 底部自己依然擁有完整的控制台與黑色半透明底 */
             .position-me { grid-area: 3 / 1 / 4 / 4 !important; padding: 2svh 3vw !important; border-radius: 2svh 2svh 0 0 !important; background: rgba(0,0,0,0.6) !important; justify-content: space-between !important; }
             
-            /* 卡牌微調適應直立螢幕 */
             .mj-card { width: 7vw !important; height: 5.5svh !important; font-size: 2.2svh !important; border-bottom-width: 3px !important; border-radius: 4px !important; margin: 0 1px !important; }
             .position-me .mj-card { width: 9vw !important; height: 7.5svh !important; font-size: 3svh !important; border-bottom-width: 4px !important; border-radius: 6px !important; margin: 0 0.5vw !important; }
             .position-me .mj-card.new-draw-card { margin-left: 3vw !important; }
-
-            /* 左右兩家牌背緊密疊加，不佔中間牌河的空間 */
             .position-left .mj-back, .position-right .mj-back { width: 12vw !important; height: 2svh !important; border-bottom-width: 2px !important; margin: -2px 0 !important; border-radius: 2px !important; }
             .position-top .mj-back { width: 4vw !important; height: 3.5svh !important; border-bottom-width: 2px !important; }
 
             .pool-area .mj-card, .meld-group .mj-card { width: 6.5vw !important; height: 5svh !important; font-size: 2svh !important; border-bottom-width: 3px !important; }
 
-            /* 文字縮放 */
             .player-avatar { font-size: 3.5svh !important; margin-bottom: 2px !important; }
             .player-name { font-size: 1.6svh !important; }
             .player-money { font-size: 1.5svh !important; padding: 2px 6px !important; margin-top: 2px !important; background: rgba(0,0,0,0.7) !important;}
@@ -162,25 +156,24 @@
             .horizontal-cards { margin-top: 0.5svh !important; }
             .me-bottom-layout { align-items: center !important; justify-content: center !important; width: 100% !important; margin-top: 1svh !important; }
             
-            /* 牌河極限放大 */
             .pool-area { max-height: 100% !important; width: 100% !important; overflow-y: auto !important; align-content: flex-start !important; justify-content: center !important; gap: 3px !important; }
             .deck-info { font-size: 1.8svh !important; padding: 4px 12px !important; margin-bottom: 2svh !important; }
             
-            /* 出牌提示移到底部控制台上緣，不擋視線 */
             #focus-play-box { top: auto !important; bottom: 30svh !important; transform: scale(0.85) !important; padding: 8px 16px !important; z-index: 100 !important; }
-            
-            /* 面板直立縮放 */
             #interception-modal { bottom: 32svh !important; right: 2vw !important; padding: 1.5svh 4vw !important; transform: scale(0.9) !important; transform-origin: bottom right !important; }
             .ctrl-btn { font-size: 2.5svh !important; padding: 1.5svh 5vw !important; border-radius: 8px !important; }
             #chow-menu-modal { bottom: 45svh !important; right: 2vw !important; transform: scale(0.9) !important; transform-origin: bottom right !important; }
             
-            /* 結算面板直排化 */
             #game-over-modal, #vote-modal { width: 90vw !important; max-height: 85svh !important; overflow-y: auto !important; padding: 20px !important; border-radius: 16px !important; }
             .end-btn-group { flex-direction: column !important; gap: 10px !important; }
             .btn-action-end { width: 100% !important; padding: 15px !important; font-size: 18px !important; }
             
             #end-winner-hand { flex-wrap: wrap !important; }
-            #audio-ctrl { top: 2svh; right: 3vw; font-size: 1.6svh; padding: 0.5svh 2vw; }
+
+            /* 手機版：釘死在極限角落，配合 icon 微調大小 */
+            .audio-btn { top: 1.5svh; padding: 0.8svh 2vw; font-size: 1.8svh; }
+            #btn-bgm { left: 2vw; }
+            #btn-sfx { right: 2vw; }
         }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -216,10 +209,10 @@
         <div id="wait-msg" style="margin-top: 15px; color: #666; text-align: center; font-weight: bold; white-space: pre-wrap;"></div>
     </div>
 
-    <div id="game-container" class="hidden">
-        <!-- 🎵 音效控制按鈕 -->
-        <button id="audio-ctrl" onclick="toggleBGM()">🔊 音效：開</button>
+    <button class="audio-btn" id="btn-bgm" onclick="toggleBGM()">🎵 音樂: 開</button>
+    <button class="audio-btn" id="btn-sfx" onclick="toggleSFX()">🔊 音效: 開</button>
 
+    <div id="game-container" class="hidden">
         <div id="seat-top" class="seat-block position-top">
             <div class="player-avatar" id="avatar-top">🐱</div>
             <div>
@@ -323,20 +316,29 @@
         
         const redCards = ['帥', '仕', '相', '俥', '傌', '炮', '兵'];
 
-        let isAudioMuted = false;
+        document.addEventListener('touchmove', function(e) {
+            if (!e.target.closest('#lobby') && !e.target.closest('.pool-area') && !e.target.closest('#game-over-modal') && !e.target.closest('#vote-modal')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        let isBgmMuted = false;
+        let isSfxMuted = false;
+        
         const sounds = {
-            bgm: new Audio('bgm.mp3'),
-            play: new Audio('play.mp3'),
-            action: new Audio('action.mp3'),
-            win: new Audio('win.mp3'),
-            lose: new Audio('lose.mp3')
+            bgm: new Audio('https://cdn.pixabay.com/download/audio/2022/01/26/audio_d0c6ff1cb8.mp3?filename=chinese-traditional-112646.mp3'),
+            play: new Audio('https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8b8175ac5.mp3?filename=wood-block-1-87165.mp3'),
+            action: new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_bb630cc098.mp3?filename=message-incoming-132126.mp3'),
+            win: new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_c6ccf3232f.mp3?filename=success-1-6297.mp3'),
+            lose: new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_1d9e26210f.mp3?filename=sad-trombone-46931.mp3')
         };
         
         sounds.bgm.loop = true;
-        sounds.bgm.volume = 0.3;
+        sounds.bgm.volume = 0.2; 
 
         function playSound(type) {
-            if (isAudioMuted) return;
+            if (type === 'bgm' && isBgmMuted) return;
+            if (type !== 'bgm' && isSfxMuted) return;
             try {
                 let s = sounds[type];
                 if (type !== 'bgm') s.currentTime = 0; 
@@ -348,14 +350,28 @@
         }
 
         function toggleBGM() {
-            isAudioMuted = !isAudioMuted;
-            const btn = document.getElementById('audio-ctrl');
-            if (isAudioMuted) {
+            isBgmMuted = !isBgmMuted;
+            const btn = document.getElementById('btn-bgm');
+            if (isBgmMuted) {
                 sounds.bgm.pause();
-                btn.innerText = '🔇 音效：關';
+                btn.innerText = '🎵 音樂: 關';
+                btn.classList.add('muted');
             } else {
                 playSound('bgm');
-                btn.innerText = '🔊 音效：開';
+                btn.innerText = '🎵 音樂: 開';
+                btn.classList.remove('muted');
+            }
+        }
+
+        function toggleSFX() {
+            isSfxMuted = !isSfxMuted;
+            const btn = document.getElementById('btn-sfx');
+            if (isSfxMuted) {
+                btn.innerText = '🔊 音效: 關';
+                btn.classList.add('muted');
+            } else {
+                btn.innerText = '🔊 音效: 開';
+                btn.classList.remove('muted');
             }
         }
 
@@ -364,9 +380,7 @@
                 if (localStorage.getItem('saved_username')) {
                     document.getElementById('username').value = localStorage.getItem('saved_username');
                 }
-            } catch (e) {
-                console.warn('LocalStorage 取用失敗，已跳過');
-            }
+            } catch (e) {}
         });
 
         function selectAvatar(element) {
@@ -385,7 +399,7 @@
             try { localStorage.setItem('saved_username', username); } catch (e) {}
             currentRoom = roomCode;
 
-            if (!isAudioMuted) playSound('bgm');
+            if (!isBgmMuted) playSound('bgm');
 
             if (socket) socket.disconnect();
             socket = io(SERVER_URL);
