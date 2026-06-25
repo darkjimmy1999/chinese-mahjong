@@ -99,6 +99,31 @@ function getChowChoices(hand, card) {
     return choices;
 }
 
+// ✅ 升級：多重破產佇列化處理機制
+function checkBankruptcyAndEndGame(roomCode, winnerName, reasonStr, playersStatus, winCard) {
+    const room = rooms[roomCode];
+    let bankrupts = room.players.filter(p => p.money <= 0);
+
+    if (bankrupts.length > 0) {
+        room.status = 'voting';
+        room.bankrupts = bankrupts.map(p => p.name);
+        
+        // 建立投票佇列，一次只審判一個人
+        room.bankruptQueue = [...room.bankrupts];
+        room.currentBankrupt = room.bankruptQueue[0];
+        room.votes = { revive: 0, debt: 0, kick: 0, votedPlayers: [] };
+        room.kickedPlayers = []; // 紀錄本輪被踢走的人
+
+        io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
+        
+        // 僅將佇列中的第一個破產者送去前端投票
+        io.in(roomCode).emit('startBankruptcyVote', { bankrupts: [room.currentBankrupt] });
+    } else {
+        io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
+        delete rooms[roomCode]; 
+    }
+}
+
 io.on('connection', (socket) => {
     socket.on('joinRoom', ({ username, avatar, roomCode }) => {
         if (!roomCode || !username) return;
@@ -112,6 +137,12 @@ io.on('connection', (socket) => {
         
         let existingPlayer = room.players.find(p => p.name === username);
         if (existingPlayer) {
+            const isSocketAlive = io.sockets.sockets.get(existingPlayer.id);
+            if (isSocketAlive && existingPlayer.id !== socket.id && room.status === 'waiting') {
+                socket.emit('errorMessage', `名稱「${username}」已在房間內，請加上數字或更換名稱！`);
+                return;
+            }
+            
             existingPlayer.id = socket.id;
             existingPlayer.avatar = avatar;
             if (room.status === 'playing') {
@@ -127,18 +158,14 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if (globalMoneyLedger[username] === undefined) {
-            globalMoneyLedger[username] = 300;
+        const ledgerKey = `${roomCode}_${username}`;
+        if (globalMoneyLedger[ledgerKey] === undefined) {
+            globalMoneyLedger[ledgerKey] = 300;
         }
 
         room.players.push({ 
-            id: socket.id, 
-            name: username, 
-            avatar: avatar || '🐱', 
-            money: globalMoneyLedger[username], 
-            hand: [], 
-            melds: [], 
-            newCard: null 
+            id: socket.id, name: username, avatar: avatar || '🐱', 
+            money: globalMoneyLedger[ledgerKey], hand: [], melds: [], newCard: null 
         });
         
         io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
@@ -159,7 +186,8 @@ io.on('connection', (socket) => {
                 room.players[i].hand = sortHand(room.deck.splice(0, 7)); 
                 room.players[i].melds = [];                             
                 room.players[i].newCard = null;
-                room.players[i].money = globalMoneyLedger[room.players[i].name]; 
+                const pLedgerKey = `${roomCode}_${room.players[i].name}`;
+                room.players[i].money = globalMoneyLedger[pLedgerKey]; 
             }
             
             let pCard = room.deck.splice(0, 1)[0];
@@ -268,29 +296,64 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ✅ 升級：多重破產序列化單獨清算投票邏輯
     socket.on('submitVote', ({ roomCode, vote }) => {
         const room = rooms[roomCode];
         if (!room || room.status !== 'voting') return;
         
         const player = room.players.find(p => p.id === socket.id);
+        // 如果你是被投票的人，或者你這輪已經投過票，不可重複提交
         if (!player || room.bankrupts.includes(player.name) || room.votes.votedPlayers.includes(player.name)) return;
 
         room.votes.votedPlayers.push(player.name);
         room.votes[vote]++;
 
-        if (room.votes.revive >= 2) {
-            room.bankrupts.forEach(bName => {
-                let bPlayer = room.players.find(p => p.name === bName);
+        // 計算目前有投票權的人數 (非破產者人數)
+        let expectedVoters = room.players.length - room.bankrupts.length;
+        let totalVotes = room.votes.revive + room.votes.debt + room.votes.kick;
+
+        let decision = null;
+        if (room.votes.revive >= 2) decision = 'revive';
+        else if (room.votes.debt >= 2) decision = 'debt';
+        else if (room.votes.kick >= 2) decision = 'kick';
+        else if (totalVotes >= expectedVoters) {
+            // 🚨【終極安全保險】當所有人都投票了卻沒有任何一個選項過 2 票 (例如 1:1 平手)，強制判定負債續玩，絕不卡死！
+            decision = 'debt';
+        }
+
+        if (decision) {
+            const currentTarget = room.currentBankrupt;
+            
+            // 執行目前這位的清算結果
+            if (decision === 'revive') {
+                let bPlayer = room.players.find(p => p.name === currentTarget);
                 if (bPlayer) {
                     bPlayer.money = 100;
-                    globalMoneyLedger[bName] = 100;
+                    globalMoneyLedger[`${roomCode}_${currentTarget}`] = 100;
                 }
-            });
-            io.in(roomCode).emit('voteResult', { result: 'revive', targets: room.bankrupts });
-            delete rooms[roomCode]; 
-        } else if (room.votes.kick >= 2) {
-            io.in(roomCode).emit('voteResult', { result: 'kick', targets: room.bankrupts });
-            delete rooms[roomCode];
+            } else if (decision === 'kick') {
+                delete globalMoneyLedger[`${roomCode}_${currentTarget}`];
+                room.kickedPlayers.push(currentTarget);
+            }
+
+            // 廣播這一位玩家的清算歷史結果給前端
+            io.in(roomCode).emit('interimVoteResult', { result: decision, target: currentTarget });
+
+            // 彈出佇列中的下一位
+            room.bankruptQueue.shift();
+
+            if (room.bankruptQueue.length > 0) {
+                // 重置投票箱，審判下一位
+                room.currentBankrupt = room.bankruptQueue[0];
+                room.votes = { revive: 0, debt: 0, kick: 0, votedPlayers: [] };
+                
+                // 發起新一輪單人投票
+                io.in(roomCode).emit('startBankruptcyVote', { bankrupts: [room.currentBankrupt] });
+            } else {
+                // 🏁 所有破產者的單獨投票皆已結束！執行最終清算解散房間
+                io.in(roomCode).emit('voteResult', { result: 'final', kickedTargets: room.kickedPlayers, targets: room.bankrupts });
+                delete rooms[roomCode];
+            }
         }
     });
 
@@ -332,23 +395,6 @@ io.on('connection', (socket) => {
         sendStateToAll(roomCode);
     }
 
-    function checkBankruptcyAndEndGame(roomCode, winnerName, reasonStr, playersStatus, winCard) {
-        const room = rooms[roomCode];
-        let bankrupts = room.players.filter(p => p.money <= 0);
-
-        if (bankrupts.length > 0) {
-            room.status = 'voting';
-            room.bankrupts = bankrupts.map(p => p.name);
-            room.votes = { revive: 0, kick: 0, votedPlayers: [] };
-            
-            io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
-            io.in(roomCode).emit('startBankruptcyVote', { bankrupts: room.bankrupts });
-        } else {
-            io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
-            delete rooms[roomCode]; 
-        }
-    }
-
     function executeHuWin(roomCode, winnerIdx, loserIdx, card) {
         const room = rooms[roomCode];
         const winner = room.players[winnerIdx];
@@ -364,7 +410,7 @@ io.on('connection', (socket) => {
         winner.money += score;
         loser.money -= score;
 
-        room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
+        room.players.forEach(p => globalMoneyLedger[`${roomCode}_${p.name}`] = p.money);
         globalLastWinner[roomCode] = winner.name; 
         
         room.status = 'waiting';
@@ -387,7 +433,7 @@ io.on('connection', (socket) => {
             }
         });
 
-        room.players.forEach(p => globalMoneyLedger[p.name] = p.money);
+        room.players.forEach(p => globalMoneyLedger[`${roomCode}_${p.name}`] = p.money);
         globalLastWinner[roomCode] = winner.name; 
 
         room.status = 'waiting';
@@ -451,7 +497,6 @@ io.on('connection', (socket) => {
         });
     }
 
-    // ✅ PRO: 斷線清除防呆機制。如果玩家斷線且房間還在等待湊桌，直接拔除幽靈位置
     socket.on('disconnect', () => {
         for (const roomCode in rooms) {
             const room = rooms[roomCode];
