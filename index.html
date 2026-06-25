@@ -8,13 +8,11 @@
         body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow-x: hidden; overflow-y: auto; }
         .hidden { display: none !important; }
         
-        /* ✅ 修正 1：大廳獨立滾動。保證手機轉橫時可以滑動點擊「進入房間」按鈕！ */
         #lobby { 
             max-width: 450px; margin: 30px auto; background: white; padding: 25px; 
             border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); 
             text-align: left; position: relative; z-index: 100;
-            max-height: 85vh; overflow-y: auto; /* 👈 解救卡死的關鍵 */
-            -webkit-overflow-scrolling: touch; 
+            max-height: 85vh; overflow-y: auto; -webkit-overflow-scrolling: touch; 
         }
         #lobby h2 { text-align: center; color: #1b4d22; margin-top: 0; }
         .form-group { margin-bottom: 15px; }
@@ -47,7 +45,6 @@
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
-        /* 麻將牌 */
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
         .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
@@ -83,87 +80,79 @@
         #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 550px; max-width: 95%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
         #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
         .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
-        .end-btn-group { display: flex; justify-content: center; gap: 20px; margin-top: 25px; }
+        
+        .end-btn-group { display: flex; justify-content: center; gap: 15px; margin-top: 25px; flex-wrap: wrap; }
         .btn-action-end { padding: 12px 25px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; }
 
         #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
 
-        /* 📱 ✅【終極修復】手機橫向佈局：採用絕對百分比與溢出防護 */
+        @media screen and (max-width: 850px) and (orientation: portrait) {
+            body::before {
+                content: "🀄️ 請將手機旋轉至【橫向】以進行遊戲\A\A（轉橫後版面就會正常囉！）";
+                white-space: pre-wrap;
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: #1b4d22; color: #ffeb3b; display: flex; justify-content: center; align-items: center;
+                font-size: 22px; font-weight: bold; z-index: 9999; padding: 20px; text-align: center; line-height: 1.6;
+            }
+            #lobby, #game-container, #game-over-modal, #vote-modal { display: none !important; }
+        }
+
+        /* 📱 手機橫向：絕對防重疊三直列網格 */
         @media screen and (max-width: 950px) and (orientation: landscape) {
             html, body {
-                height: 100%; height: -webkit-fill-available; width: 100%;
-                overflow: hidden !important; position: fixed !important; 
-                margin: 0 !important; padding: 0 !important; background: #1b4d22;
-                touch-action: none !important; 
+                position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+                width: 100vw !important; height: 100svh !important;
+                padding: 0 !important; margin: 0 !important;
+                overflow: hidden !important; background: #1b4d22 !important; touch-action: none !important; 
             }
             
             #game-container {
-                position: absolute !important; top: 0 !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
-                width: 100% !important; height: 100% !important;
-                display: grid !important;
-                /* ✅ 修正 2：採用嚴格的 % 分配，絕不允許被卡牌撐爆！ */
-                grid-template-rows: 20% 55% 25% !important;
-                grid-template-columns: 14% 72% 14% !important;
-                gap: 0 !important; 
-                padding-bottom: env(safe-area-inset-bottom, 0px) !important;
-                padding-left: env(safe-area-inset-left, 0px) !important;
-                padding-right: env(safe-area-inset-right, 0px) !important;
-                box-sizing: border-box !important;
+                position: absolute !important;
+                top: env(safe-area-inset-top, 0px) !important; left: env(safe-area-inset-left, 0px) !important;
+                right: env(safe-area-inset-right, 0px) !important; bottom: env(safe-area-inset-bottom, 0px) !important;
+                width: auto !important; height: auto !important; max-width: none !important; display: grid !important;
+                grid-template-rows: 20svh 1fr 30svh !important;
+                grid-template-columns: 14vw 1fr 14vw !important;
+                gap: 1vw !important; padding: 1vw !important; box-sizing: border-box !important;
             }
 
-            /* ✅ 修正 3：加入 min-height: 0 防護罩，強制網格不會被內容撐破邊界 */
-            .seat-block, .table-center, .position-me { 
-                min-height: 0 !important; 
-                min-width: 0 !important; 
-                margin: 2px !important;
-            }
+            .table-center { padding: 1vw !important; border-width: 0.3svh !important; border-radius: 2svh !important; box-shadow: none !important; }
+            .seat-block { padding: 1vw !important; border-radius: 1.5svh !important; justify-content: center !important; }
+            .position-top { grid-area: 1 / 2 / 2 / 3 !important; flex-direction: row !important; gap: 2vw !important; }
+            .position-left { grid-area: 1 / 1 / 4 / 2 !important; padding: 1vw !important; }
+            .position-right { grid-area: 1 / 3 / 4 / 4 !important; padding: 1vw !important; }
+            .position-me { grid-area: 3 / 2 / 4 / 3 !important; padding: 1svh 2vw !important; border-radius: 2svh !important; background: rgba(0,0,0,0.6) !important; justify-content: space-around !important; }
+            
+            .mj-card { width: 5.2svh !important; height: 8svh !important; font-size: 3.5svh !important; border-bottom-width: 0.6svh !important; border-radius: 0.5svh !important; margin: 0 0.2vw !important; }
+            .mj-card.new-draw-card { margin-left: 1.5vw !important; border-bottom-width: 0.8svh !important; }
+            .mj-back { width: 3.8svh !important; height: 5.8svh !important; border-bottom-width: 0.4svh !important; border-radius: 0.5svh !important; }
+            .pool-area .mj-card, .meld-group .mj-card { width: 4.2svh !important; height: 6.2svh !important; font-size: 2.8svh !important; border-bottom-width: 0.4svh !important; }
 
-            .table-center { border-width: 2px !important; border-radius: 12px !important; box-shadow: none !important; }
-            .seat-block { border-radius: 6px !important; }
-            
-            .position-top { grid-area: 1 / 2 / 2 / 3 !important; flex-direction: row !important; gap: 10px !important; }
-            .position-left { grid-area: 1 / 1 / 4 / 2 !important; }
-            .position-right { grid-area: 1 / 3 / 4 / 4 !important; }
-            
-            .position-me { 
-                grid-area: 3 / 2 / 4 / 3 !important; 
-                background: rgba(0,0,0,0.6) !important; 
-                border-radius: 8px !important;
-                display: flex !important; flex-direction: column !important; justify-content: space-evenly !important; 
-                padding: 2px 10px !important;
-            }
-            
-            /* 將卡牌尺寸調小，確保絕對塞得進 25% 的底部區域 */
-            .mj-card { width: 26px !important; height: 38px !important; font-size: 16px !important; border-bottom-width: 2px !important; border-radius: 3px !important; margin: 0 1px !important; }
-            .mj-card.new-draw-card { margin-left: 6px !important; border-bottom-width: 3px !important; }
-            .mj-back { width: 16px !important; height: 24px !important; border-bottom-width: 2px !important; border-radius: 2px !important; }
-            .pool-area .mj-card, .meld-group .mj-card { width: 22px !important; height: 32px !important; font-size: 14px !important; border-bottom-width: 2px !important; }
+            .player-avatar { font-size: 4svh !important; margin-bottom: 0 !important; }
+            .player-name { font-size: 2.2svh !important; }
+            .player-money { font-size: 2svh !important; padding: 0.3svh 1vw !important; margin-top: 0.3svh !important; border-radius: 2svh !important; }
+            #my-turn-status { font-size: 2.2svh !important; margin-left: 2vw !important; }
 
-            .player-avatar { font-size: 18px !important; margin-bottom: 0 !important; }
-            .player-name { font-size: 10px !important; }
-            .player-money { font-size: 10px !important; padding: 1px 4px !important; margin-top: 1px !important; }
-            #my-turn-status { font-size: 10px !important; margin-left: 10px !important; }
-
-            .horizontal-cards, .vertical-cards, .my-hand-cards { gap: 1px !important; }
-            .me-bottom-layout { align-items: center !important; justify-content: center !important; flex: none !important; width: 100% !important; margin: 0 !important;}
+            .horizontal-cards, .vertical-cards, .my-hand-cards { gap: 0.5vw !important; }
+            .me-bottom-layout { align-items: center !important; flex: 1 !important; margin-top: 0.5svh !important; justify-content: center !important; }
             
-            .pool-area { max-height: 100% !important; max-width: 100% !important; overflow-y: auto !important; align-content: flex-start !important; gap: 2px !important; }
-            .deck-info { font-size: 11px !important; padding: 2px 8px !important; margin-bottom: 4px !important; border-radius: 10px !important; }
+            .pool-area { max-height: 100% !important; overflow: hidden !important; gap: 0.5vw !important; align-content: center !important; }
+            .deck-info { font-size: 2.2svh !important; padding: 0.5svh 2vw !important; margin-bottom: 1svh !important; border-radius: 3svh !important; }
             
-            #focus-play-box { top: -20px !important; transform: scale(0.6) !important; padding: 4px 8px !important; }
-            #interception-modal { bottom: 25% !important; right: 5% !important; padding: 6px 12px !important; transform: scale(0.85) !important; transform-origin: bottom right !important; border-width: 1px !important; }
-            .ctrl-btn { font-size: 14px !important; padding: 6px 14px !important; border-radius: 4px !important; }
-            #chow-menu-modal { bottom: 35% !important; right: 5% !important; padding: 8px !important; transform: scale(0.85) !important; transform-origin: bottom right !important; }
+            #focus-play-box { top: -5svh !important; transform: scale(0.7) !important; padding: 1svh 2vw !important; }
+            #interception-modal { bottom: 32svh !important; right: 2vw !important; padding: 1svh 2vw !important; transform: scale(0.8) !important; transform-origin: right bottom !important; border-width: 1px !important; }
+            .ctrl-btn { font-size: 2.8svh !important; padding: 1svh 3vw !important; border-radius: 1svh !important; }
+            #chow-menu-modal { bottom: 44svh !important; right: 2vw !important; padding: 1.5svh !important; transform: scale(0.8) !important; transform-origin: right bottom !important; }
             
-            #game-over-modal, #vote-modal { width: 90% !important; max-height: 90% !important; overflow-y: auto !important; padding: 15px !important; border-radius: 12px !important; }
-            #game-over-modal h2 { font-size: 20px !important; margin-bottom: 5px !important; }
-            #end-reason-text { font-size: 12px !important; margin: 5px 0 !important; }
-            .score-board-row { padding: 4px 10px !important; font-size: 12px !important; margin: 2px 0 !important; }
-            .end-btn-group { margin-top: 10px !important; gap: 10px !important; }
-            .btn-action-end { padding: 6px 12px !important; font-size: 12px !important; border-radius: 4px !important; }
+            #game-over-modal, #vote-modal { width: 85vw !important; max-height: 90svh !important; overflow-y: auto !important; padding: 3svh !important; border-radius: 2svh !important; }
+            #game-over-modal h2 { font-size: 4.5svh !important; margin-bottom: 1.5svh !important; }
+            #end-reason-text { font-size: 2.5svh !important; margin: 1svh 0 !important; }
+            .score-board-row { padding: 1svh 2vw !important; font-size: 2.5svh !important; margin: 0.5svh 0 !important; }
+            .end-btn-group { margin-top: 1.5svh !important; gap: 1.5vw !important; }
+            .btn-action-end { padding: 1.2svh 2.5vw !important; font-size: 2.2svh !important; border-radius: 1svh !important; }
             
-            #end-winner-hand { min-height: 35px !important; margin: 5px 0 !important; }
-            #end-winner-hand .mj-card { width: 22px !important; height: 32px !important; font-size: 14px !important; border-bottom-width: 2px !important; margin: 0 1px !important; }
+            #end-winner-hand { min-height: 8svh !important; margin: 1.5svh 0 !important; }
+            #end-winner-hand .mj-card { width: 4.2svh !important; height: 6.2svh !important; font-size: 2.8svh !important; border-bottom-width: 0.4svh !important; margin: 0 0.2vw !important; }
         }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -274,7 +263,7 @@
         <div id="end-scoreboard-list"></div>
         <div class="end-btn-group" id="normal-end-btns">
             <button class="btn-action-end" style="background:#4caf50;" onclick="continueGame()">繼續遊戲 (莊家連莊)</button>
-            <button class="btn-action-end" style="background:#2196f3;" onclick="changeRoom()">更改房間</button>
+            <button class="btn-action-end" style="background:#2196f3;" onclick="changeRoom()">離開房間</button>
         </div>
         <div id="vote-wait-msg" class="hidden" style="color:#ffeb3b; font-size:16px; font-weight:bold; margin-top:15px;"></div>
     </div>
@@ -283,13 +272,13 @@
         <h2 style="color: #ff5252; margin-top:0;">⚠️ 破產警告！</h2>
         <p id="vote-text" style="font-size:16px; color:white; font-weight:bold; line-height:1.5; margin-bottom: 15px;"></p>
         <div id="vote-btns" class="end-btn-group">
-            <button class="btn-action-end" style="background:#ff9800;" onclick="submitVote('revive')">💰 借他 100 元續玩</button>
-            <button class="btn-action-end" style="background:#e53935;" onclick="submitVote('kick')">👋 請他退出遊戲</button>
+            <button class="btn-action-end" style="background:#4caf50;" onclick="submitVote('revive')">💰 贊助 100 元復活</button>
+            <button class="btn-action-end" style="background:#ff9800;" onclick="submitVote('debt')">📉 允許負債繼續玩</button>
+            <button class="btn-action-end" style="background:#e53935;" onclick="submitVote('kick')">👋 殘忍踢出房間</button>
         </div>
     </div>
 
     <script>
-        // ⚠️ 請確認這是您目前的 Render 網址
         const SERVER_URL = "https://mahjong-server-nwmj.onrender.com"; 
         
         let socket;
@@ -364,6 +353,37 @@
                 document.getElementById('interception-modal').classList.remove('hidden');
             });
 
+            // ✅ 階段性單人投票結果提示
+            socket.on('interimVoteResult', ({ result, target }) => {
+                let msg = "";
+                if (result === 'revive') msg = `🎉 投票結果：【${target}】獲得全場贊助 100 元復活！`;
+                else if (result === 'debt') msg = `📉 投票結果：全場同意【${target}】負債繼續看牌遊玩！`;
+                else if (result === 'kick') msg = `👋 投票結果：【${target}】被無情踢出房間！`;
+                alert(msg);
+            });
+
+            // ✅ 最終清算總結
+            socket.on('voteResult', ({ result, kickedTargets, targets }) => {
+                document.getElementById('vote-modal').classList.add('hidden');
+                let myName = document.getElementById('username').value.trim();
+                
+                if (kickedTargets && kickedTargets.includes(myName)) {
+                    alert(`👋 投票通過！你已破產且被無情踢出遊戲！\n你的帳戶已註銷，可以換個房號重玩。`);
+                    document.getElementById('game-over-modal').classList.add('hidden');
+                    document.getElementById('game-container').classList.add('hidden');
+                    document.getElementById('lobby').classList.remove('hidden');
+                } else {
+                    if (kickedTargets && kickedTargets.length > 0) {
+                        let names = kickedTargets.join('、');
+                        alert(`👋 所有破產投票結束！【${names}】已被清除離場！\n其餘玩家財產保留，點擊「繼續遊戲」等待下一位玩家！`);
+                    } else {
+                        alert(`🎉 所有破產審判投票順利結束！全場財產已同步更新。`);
+                    }
+                    document.getElementById('normal-end-btns').classList.remove('hidden');
+                    document.getElementById('vote-wait-msg').classList.add('hidden');
+                }
+            });
+
             socket.on('gameOver', ({ winner, reason, playersStatus, winCard }) => {
                 document.getElementById('interception-modal').classList.add('hidden');
                 document.getElementById('chow-menu-modal').classList.add('hidden');
@@ -381,7 +401,7 @@
                             let groupHtml = `<div class="meld-group" style="margin-right:4px; display:flex; gap:1px; background:rgba(0,0,0,0.5); padding:2px; border-radius:4px;">`;
                             m.cards.forEach(c => {
                                 const colorClass = redCards.includes(c) ? 'red' : 'black';
-                                groupHtml += `<div class="mj-card no-hover ${colorClass}" style="width:24px; height:36px; font-size:14px; border-bottom-width:2px;">${c}</div>`;
+                                groupHtml += `<div class="mj-card no-hover ${colorClass}">${c}</div>`;
                             });
                             groupHtml += `</div>`;
                             handDiv.innerHTML += groupHtml;
@@ -395,7 +415,7 @@
                         
                         handCards.forEach(c => {
                             const colorClass = redCards.includes(c) ? 'red' : 'black';
-                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="width:28px; height:42px; font-size:16px; border-bottom-width:3px; margin:0 2px;">${c}</div>`;
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}">${c}</div>`;
                         });
                         
                         if (winCard) {
@@ -421,43 +441,20 @@
                 document.getElementById('game-over-modal').classList.remove('hidden');
             });
 
+            // ✅ 序列化投票接收：一次只會接到一個人的名字
             socket.on('startBankruptcyVote', ({ bankrupts }) => {
                 document.getElementById('normal-end-btns').classList.add('hidden');
-                
                 let myName = document.getElementById('username').value.trim();
-                let bNames = bankrupts.join('、');
+                let targetName = bankrupts[0];
 
-                if (bankrupts.includes(myName)) {
+                if (myName === targetName) {
                     document.getElementById('vote-wait-msg').classList.remove('hidden');
-                    document.getElementById('vote-wait-msg').innerText = "💀 你已經破產！等待其他玩家決定你的命運...";
+                    document.getElementById('vote-wait-msg').innerText = `💀 你已破產！正在等待全場玩家對你進行命運審判...`;
+                    document.getElementById('vote-modal').classList.add('hidden'); 
                 } else {
                     document.getElementById('vote-modal').classList.remove('hidden');
-                    document.getElementById('vote-text').innerText = `玩家【${bNames}】已經破產了！\n請問全場要怎麼處置？ (需2票同意)`;
+                    document.getElementById('vote-text').innerText = `玩家【${targetName}】已經破產了！\n請問要如何處置？ (先獲2票者成立)`;
                     document.getElementById('vote-btns').classList.remove('hidden');
-                }
-            });
-
-            socket.on('voteResult', ({ result, targets }) => {
-                document.getElementById('vote-modal').classList.add('hidden');
-                let names = targets.join('、');
-                
-                if (result === 'revive') {
-                    alert(`🎉 投票通過！\n【${names}】獲得大家的支持，帶著 100 元重新加入戰局！`);
-                    document.querySelectorAll('.score-board-row').forEach(row => {
-                        targets.forEach(t => {
-                            if (row.querySelector('.score-name').innerText.includes(t)) {
-                                row.querySelector('.score-money').innerText = '$100 元';
-                                row.querySelector('.score-money').style.color = '#00ffcc';
-                            }
-                        });
-                    });
-                    document.getElementById('normal-end-btns').classList.remove('hidden');
-                    document.getElementById('vote-wait-msg').classList.add('hidden');
-                } else {
-                    alert(`👋 投票通過！\n【${names}】被踢出遊戲，房間已解散！請重新建立新房間。`);
-                    document.getElementById('game-over-modal').classList.add('hidden');
-                    document.getElementById('game-container').classList.add('hidden');
-                    document.getElementById('lobby').classList.remove('hidden');
                 }
             });
 
@@ -579,16 +576,17 @@
             socket.emit('playCard', { roomCode: currentRoom, cardIndex: index });
         }
 
-        function sendAction(action, details = null) {
-            document.getElementById('interception-modal').classList.add('hidden');
-            document.getElementById('chow-menu-modal').classList.add('hidden');
-            socket.emit('respondInterception', { roomCode: currentRoom, action, details });
-        }
-
+        // 提交投票
         function submitVote(voteType) {
             document.getElementById('vote-btns').classList.add('hidden');
             document.getElementById('vote-text').innerText = "🗳️ 已收到您的選票，正在等待其他人...";
             socket.emit('submitVote', { roomCode: currentRoom, vote: voteType });
+        }
+
+        function sendAction(action, details = null) {
+            document.getElementById('interception-modal').classList.add('hidden');
+            document.getElementById('chow-menu-modal').classList.add('hidden');
+            socket.emit('respondInterception', { roomCode: currentRoom, action, details });
         }
 
         function openChowMenu() {
@@ -626,7 +624,7 @@
             const username = document.getElementById('username').value.trim();
             if (socket) {
                 socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode: currentRoom });
-                document.getElementById('wait-msg').innerText = `已就緒！正在等待其他玩家點擊「繼續遊戲」...\n（由上局贏家優先開局！）`;
+                document.getElementById('wait-msg').innerText = `已就緒！正在等待其他玩家...\n（由上局贏家優先開局！）`;
             } else {
                 connectToGame();
             }
