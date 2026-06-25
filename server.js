@@ -13,6 +13,8 @@ const io = new Server(server, {
 
 const rooms = {};
 const globalMoneyLedger = {}; 
+// ✅ 新增：用來記錄「誰已經被核准可以負債續玩」的免死金牌狀態
+const globalDebtStatus = {}; 
 const globalLastWinner = {}; 
 
 const TYPES = ['帥', '仕', '相', '俥', '傌', '炮', '兵', '將', '士', '象', '車', '馬', '包', '卒'];
@@ -49,9 +51,7 @@ function isPureColor(hand, melds) {
 }
 
 function checkWinPattern(hand, melds = []) {
-    let allCards = [...hand];
-    melds.forEach(m => allCards.push(...m.cards));
-    if (allCards.length !== 8) return false;
+    if (hand.length + (melds.length * 3) !== 8) return false;
     return canDecompose([...hand].sort((a,b)=>CARD_ORDER[a]-CARD_ORDER[b]), false);
 }
 
@@ -99,26 +99,23 @@ function getChowChoices(hand, card) {
     return choices;
 }
 
-// ✅ 升級：多重破產佇列化處理機制
 function checkBankruptcyAndEndGame(roomCode, winnerName, reasonStr, playersStatus, winCard) {
     const room = rooms[roomCode];
-    let bankrupts = room.players.filter(p => p.money <= 0);
+    // ✅ 關鍵邏輯：只篩選出「沒錢」而且「還沒被核准負債」的人進行投票
+    let newlyBankrupts = room.players.filter(p => p.money <= 0 && !globalDebtStatus[`${roomCode}_${p.name}`]);
 
-    if (bankrupts.length > 0) {
+    if (newlyBankrupts.length > 0) {
         room.status = 'voting';
-        room.bankrupts = bankrupts.map(p => p.name);
-        
-        // 建立投票佇列，一次只審判一個人
+        room.bankrupts = newlyBankrupts.map(p => p.name);
         room.bankruptQueue = [...room.bankrupts];
         room.currentBankrupt = room.bankruptQueue[0];
         room.votes = { revive: 0, debt: 0, kick: 0, votedPlayers: [] };
-        room.kickedPlayers = []; // 紀錄本輪被踢走的人
+        room.kickedPlayers = []; 
 
         io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
-        
-        // 僅將佇列中的第一個破產者送去前端投票
         io.in(roomCode).emit('startBankruptcyVote', { bankrupts: [room.currentBankrupt] });
     } else {
+        // 如果錢小於0的人都已經在 globalDebtStatus 裡面（代表投過票了），就直接略過投票繼續結算！
         io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
         delete rooms[roomCode]; 
     }
@@ -296,19 +293,16 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ✅ 升級：多重破產序列化單獨清算投票邏輯
     socket.on('submitVote', ({ roomCode, vote }) => {
         const room = rooms[roomCode];
         if (!room || room.status !== 'voting') return;
         
         const player = room.players.find(p => p.id === socket.id);
-        // 如果你是被投票的人，或者你這輪已經投過票，不可重複提交
         if (!player || room.bankrupts.includes(player.name) || room.votes.votedPlayers.includes(player.name)) return;
 
         room.votes.votedPlayers.push(player.name);
         room.votes[vote]++;
 
-        // 計算目前有投票權的人數 (非破產者人數)
         let expectedVoters = room.players.length - room.bankrupts.length;
         let totalVotes = room.votes.revive + room.votes.debt + room.votes.kick;
 
@@ -317,40 +311,37 @@ io.on('connection', (socket) => {
         else if (room.votes.debt >= 2) decision = 'debt';
         else if (room.votes.kick >= 2) decision = 'kick';
         else if (totalVotes >= expectedVoters) {
-            // 🚨【終極安全保險】當所有人都投票了卻沒有任何一個選項過 2 票 (例如 1:1 平手)，強制判定負債續玩，絕不卡死！
             decision = 'debt';
         }
 
         if (decision) {
             const currentTarget = room.currentBankrupt;
             
-            // 執行目前這位的清算結果
             if (decision === 'revive') {
                 let bPlayer = room.players.find(p => p.name === currentTarget);
                 if (bPlayer) {
                     bPlayer.money = 100;
                     globalMoneyLedger[`${roomCode}_${currentTarget}`] = 100;
+                    globalDebtStatus[`${roomCode}_${currentTarget}`] = false; // 取消負債狀態
                 }
+            } else if (decision === 'debt') {
+                // ✅ 核准負債，頒發免死金牌，直到他還清錢前都不再投票
+                globalDebtStatus[`${roomCode}_${currentTarget}`] = true;
             } else if (decision === 'kick') {
                 delete globalMoneyLedger[`${roomCode}_${currentTarget}`];
+                delete globalDebtStatus[`${roomCode}_${currentTarget}`];
                 room.kickedPlayers.push(currentTarget);
             }
 
-            // 廣播這一位玩家的清算歷史結果給前端
             io.in(roomCode).emit('interimVoteResult', { result: decision, target: currentTarget });
 
-            // 彈出佇列中的下一位
             room.bankruptQueue.shift();
 
             if (room.bankruptQueue.length > 0) {
-                // 重置投票箱，審判下一位
                 room.currentBankrupt = room.bankruptQueue[0];
                 room.votes = { revive: 0, debt: 0, kick: 0, votedPlayers: [] };
-                
-                // 發起新一輪單人投票
                 io.in(roomCode).emit('startBankruptcyVote', { bankrupts: [room.currentBankrupt] });
             } else {
-                // 🏁 所有破產者的單獨投票皆已結束！執行最終清算解散房間
                 io.in(roomCode).emit('voteResult', { result: 'final', kickedTargets: room.kickedPlayers, targets: room.bankrupts });
                 delete rooms[roomCode];
             }
@@ -410,7 +401,13 @@ io.on('connection', (socket) => {
         winner.money += score;
         loser.money -= score;
 
-        room.players.forEach(p => globalMoneyLedger[`${roomCode}_${p.name}`] = p.money);
+        // ✅ 結算後，只要錢 > 0，立刻拔除負債免死金牌 (鹹魚翻身，下次破產需重投)
+        room.players.forEach(p => {
+            globalMoneyLedger[`${roomCode}_${p.name}`] = p.money;
+            if (p.money > 0) {
+                globalDebtStatus[`${roomCode}_${p.name}`] = false;
+            }
+        });
         globalLastWinner[roomCode] = winner.name; 
         
         room.status = 'waiting';
@@ -433,7 +430,13 @@ io.on('connection', (socket) => {
             }
         });
 
-        room.players.forEach(p => globalMoneyLedger[`${roomCode}_${p.name}`] = p.money);
+        // ✅ 結算後，只要錢 > 0，立刻拔除負債免死金牌
+        room.players.forEach(p => {
+            globalMoneyLedger[`${roomCode}_${p.name}`] = p.money;
+            if (p.money > 0) {
+                globalDebtStatus[`${roomCode}_${p.name}`] = false;
+            }
+        });
         globalLastWinner[roomCode] = winner.name; 
 
         room.status = 'waiting';
