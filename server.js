@@ -13,7 +13,6 @@ const io = new Server(server, {
 
 const rooms = {};
 const globalMoneyLedger = {}; 
-// ✅ 新增：用來記錄「誰已經被核准可以負債續玩」的免死金牌狀態
 const globalDebtStatus = {}; 
 const globalLastWinner = {}; 
 
@@ -101,7 +100,6 @@ function getChowChoices(hand, card) {
 
 function checkBankruptcyAndEndGame(roomCode, winnerName, reasonStr, playersStatus, winCard) {
     const room = rooms[roomCode];
-    // ✅ 關鍵邏輯：只篩選出「沒錢」而且「還沒被核准負債」的人進行投票
     let newlyBankrupts = room.players.filter(p => p.money <= 0 && !globalDebtStatus[`${roomCode}_${p.name}`]);
 
     if (newlyBankrupts.length > 0) {
@@ -115,7 +113,6 @@ function checkBankruptcyAndEndGame(roomCode, winnerName, reasonStr, playersStatu
         io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
         io.in(roomCode).emit('startBankruptcyVote', { bankrupts: [room.currentBankrupt] });
     } else {
-        // 如果錢小於0的人都已經在 globalDebtStatus 裡面（代表投過票了），就直接略過投票繼續結算！
         io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
         delete rooms[roomCode]; 
     }
@@ -132,6 +129,7 @@ io.on('connection', (socket) => {
 
         const room = rooms[roomCode];
         
+        // 1. 斷線重連機制 (小智回來了)
         let existingPlayer = room.players.find(p => p.name === username);
         if (existingPlayer) {
             const isSocketAlive = io.sockets.sockets.get(existingPlayer.id);
@@ -150,9 +148,36 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // 2. 替補機制 (小華加入了客滿的房間)
         if (room.players.length >= 4) {
-            socket.emit('errorMessage', '該房間人數已滿！');
-            return;
+            let disconnectedIdx = room.players.findIndex(p => !io.sockets.sockets.get(p.id));
+            
+            if (disconnectedIdx !== -1) {
+                let droppedPlayerName = room.players[disconnectedIdx].name;
+                
+                if (room.status !== 'waiting') {
+                    // 如果遊戲正在進行，觸發替補強制流局
+                    let playersStatus = room.players.map(p => ({
+                        name: p.name, avatar: p.avatar, money: p.money, hand: p.hand, melds: p.melds
+                    }));
+                    
+                    io.in(roomCode).emit('gameOver', { 
+                        winner: '流局', 
+                        reason: `🚨 玩家【${droppedPlayerName}】已離線，新玩家【${username}】替補加入！\n本局強制中斷，保護舊玩家財產，準備重新開局。`, 
+                        playersStatus: playersStatus 
+                    });
+                    
+                    delete rooms[roomCode]; // 銷毀卡死的房間
+                    socket.emit('errorMessage', `✅ 替補成功！已重置牌局。\n請再次點擊「進入遊戲」按鈕與大家會合開局。`);
+                    return;
+                } else {
+                    // 若只是大廳等待，直接踢掉替換
+                    room.players.splice(disconnectedIdx, 1);
+                }
+            } else {
+                socket.emit('errorMessage', '該房間人數已滿且全員都在線上！');
+                return;
+            }
         }
 
         const ledgerKey = `${roomCode}_${username}`;
@@ -322,10 +347,9 @@ io.on('connection', (socket) => {
                 if (bPlayer) {
                     bPlayer.money = 100;
                     globalMoneyLedger[`${roomCode}_${currentTarget}`] = 100;
-                    globalDebtStatus[`${roomCode}_${currentTarget}`] = false; // 取消負債狀態
+                    globalDebtStatus[`${roomCode}_${currentTarget}`] = false; 
                 }
             } else if (decision === 'debt') {
-                // ✅ 核准負債，頒發免死金牌，直到他還清錢前都不再投票
                 globalDebtStatus[`${roomCode}_${currentTarget}`] = true;
             } else if (decision === 'kick') {
                 delete globalMoneyLedger[`${roomCode}_${currentTarget}`];
@@ -401,7 +425,6 @@ io.on('connection', (socket) => {
         winner.money += score;
         loser.money -= score;
 
-        // ✅ 結算後，只要錢 > 0，立刻拔除負債免死金牌 (鹹魚翻身，下次破產需重投)
         room.players.forEach(p => {
             globalMoneyLedger[`${roomCode}_${p.name}`] = p.money;
             if (p.money > 0) {
@@ -430,7 +453,6 @@ io.on('connection', (socket) => {
             }
         });
 
-        // ✅ 結算後，只要錢 > 0，立刻拔除負債免死金牌
         room.players.forEach(p => {
             globalMoneyLedger[`${roomCode}_${p.name}`] = p.money;
             if (p.money > 0) {
@@ -500,10 +522,11 @@ io.on('connection', (socket) => {
         });
     }
 
+    // 🛡️ 保護機制：只有在大廳等待時，才因為斷線而把人踢掉。遊戲中斷線會保留座位。
     socket.on('disconnect', () => {
         for (const roomCode in rooms) {
             const room = rooms[roomCode];
-            if (room.status === 'waiting' || room.status === 'voting') {
+            if (room.status === 'waiting') {
                 const pIdx = room.players.findIndex(p => p.id === socket.id);
                 if (pIdx !== -1) {
                     room.players.splice(pIdx, 1);
