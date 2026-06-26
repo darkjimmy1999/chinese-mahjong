@@ -1,541 +1,725 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-
-const app = express();
-app.use(cors());
-
-const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
-});
-
-const rooms = {};
-const globalMoneyLedger = {}; 
-const globalDebtStatus = {}; 
-const globalLastWinner = {}; 
-
-const TYPES = ['帥', '仕', '相', '俥', '傌', '炮', '兵', '將', '士', '象', '車', '馬', '包', '卒'];
-const ORIGINAL_DECK = [];
-for (let i = 0; i < 4; i++) {
-    ORIGINAL_DECK.push(...TYPES);
-}
-
-const CARD_ORDER = {
-    '帥': 1, '仕': 2, '相': 3, '俥': 4, '傌': 5, '炮': 6, '兵': 7,
-    '將': 8, '士': 9, '象': 10, '車': 11, '馬': 12, '包': 13, '卒': 14
-};
-
-function sortHand(hand) {
-    return [...hand].sort((a, b) => CARD_ORDER[a] - CARD_ORDER[b]);
-}
-
-function shuffleDeck() {
-    let deck = [...ORIGINAL_DECK];
-    for (let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
-    return deck;
-}
-
-function isPureColor(hand, melds) {
-    let allCards = [...hand];
-    melds.forEach(m => allCards.push(...m.cards));
-    const redCards = ['帥', '仕', '相', '俥', '傌', '炮', '兵'];
-    let hasRed = allCards.some(c => redCards.includes(c));
-    let hasBlack = allCards.some(c => !redCards.includes(c));
-    return !(hasRed && hasBlack);
-}
-
-function checkWinPattern(hand, melds = []) {
-    if (hand.length + (melds.length * 3) !== 8) return false;
-    return canDecompose([...hand].sort((a,b)=>CARD_ORDER[a]-CARD_ORDER[b]), false);
-}
-
-function canDecompose(cards, hasEye) {
-    if (cards.length === 0) return hasEye;
-    if (!hasEye) {
-        for (let i = 0; i < cards.length - 1; i++) {
-            if (cards[i] === cards[i+1]) {
-                let remaining = [...cards];
-                remaining.splice(i, 2);
-                if (canDecompose(remaining, true)) return true;
-            }
-        }
-    }
-    let c1 = cards[0];
-    if (cards.filter(c => c === c1).length >= 3) {
-        let remaining = [...cards];
-        remaining.splice(0, 3);
-        if (canDecompose(remaining, hasEye)) return true;
-    }
-    const eatGroups = [['將', '士', '象'], ['帥', '仕', '相'], ['車', '馬', '包'], ['俥', '傌', '炮']];
-    for (let group of eatGroups) {
-        if (group.includes(c1)) {
-            if (cards.includes(group[0]) && cards.includes(group[1]) && cards.includes(group[2])) {
-                let remaining = [...cards];
-                remaining.splice(remaining.indexOf(group[0]), 1);
-                remaining.splice(remaining.indexOf(group[1]), 1);
-                remaining.splice(remaining.indexOf(group[2]), 1);
-                if (canDecompose(remaining, hasEye)) return true;
-            }
-        }
-    }
-    return false;
-}
-
-function getChowChoices(hand, card) {
-    const eatGroups = [['將', '士', '象'], ['帥', '仕', '相'], ['車', '馬', '包'], ['俥', '傌', '炮']];
-    let choices = [];
-    for (let group of eatGroups) {
-        if (group.includes(card)) {
-            let needed = group.filter(c => c !== card);
-            if (hand.includes(needed[0]) && hand.includes(needed[1])) choices.push(group); 
-        }
-    }
-    return choices;
-}
-
-function checkBankruptcyAndEndGame(roomCode, winnerName, reasonStr, playersStatus, winCard) {
-    const room = rooms[roomCode];
-    let newlyBankrupts = room.players.filter(p => p.money <= 0 && !globalDebtStatus[`${roomCode}_${p.name}`]);
-
-    if (newlyBankrupts.length > 0) {
-        room.status = 'voting';
-        room.bankrupts = newlyBankrupts.map(p => p.name);
-        room.bankruptQueue = [...room.bankrupts];
-        room.currentBankrupt = room.bankruptQueue[0];
-        room.votes = { revive: 0, debt: 0, kick: 0, votedPlayers: [] };
-        room.kickedPlayers = []; 
-
-        io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
-        io.in(roomCode).emit('startBankruptcyVote', { bankrupts: [room.currentBankrupt] });
-    } else {
-        io.in(roomCode).emit('gameOver', { winner: winnerName, reason: reasonStr, playersStatus, winCard });
-        delete rooms[roomCode]; 
-    }
-}
-
-io.on('connection', (socket) => {
-    socket.on('joinRoom', ({ username, avatar, roomCode }) => {
-        if (!roomCode || !username) return;
-        socket.join(roomCode);
-
-        if (!rooms[roomCode]) {
-            rooms[roomCode] = { players: [], deck: [], turn: 0, pool: [], status: 'waiting', lastPlayed: null, pendingActions: {} };
-        }
-
-        const room = rooms[roomCode];
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>線上四人象棋麻將（旗艦完整版）</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+        .hidden { display: none !important; }
         
-        // 1. 斷線重連機制 (小智回來了)
-        let existingPlayer = room.players.find(p => p.name === username);
-        if (existingPlayer) {
-            const isSocketAlive = io.sockets.sockets.get(existingPlayer.id);
-            if (isSocketAlive && existingPlayer.id !== socket.id && room.status === 'waiting') {
-                socket.emit('errorMessage', `名稱「${username}」已在房間內，請加上數字或更換名稱！`);
-                return;
+        /* 大廳 */
+        #lobby { 
+            max-width: 450px; margin: 30px auto; background: white; padding: 25px; 
+            border-radius: 16px; color: #333; text-align: left;
+            max-height: 80vh; overflow-y: auto; -webkit-overflow-scrolling: touch; 
+        }
+        #lobby h2 { text-align: center; color: #1b4d22; margin-top: 0; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { font-weight: bold; display: block; margin-bottom: 5px; }
+        input[type="text"] { width: 93%; padding: 12px; font-size: 16px; border: 2px solid #ccc; border-radius: 8px; }
+        
+        .avatar-selector { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 10px 0; }
+        .avatar-box { font-size: 30px; text-align: center; padding: 10px; background: #f0f0f0; border: 3px solid transparent; border-radius: 12px; cursor: pointer; transition: 0.2s; user-select: none; }
+        .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
+        .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
+
+        /* ✅ 優化：音效控制按鈕並排釘在最右上角，體積縮小 */
+        #audio-controls {
+            position: fixed; top: 5px; right: 5px;
+            display: flex; flex-direction: row; gap: 5px; z-index: 2000;
+        }
+        .audio-btn {
+            background: rgba(0,0,0,0.6); color: #ffeb3b; border: 1px solid #ffeb3b;
+            padding: 4px 8px; border-radius: 6px; font-weight: bold; cursor: pointer;
+            font-size: 12px; outline: none; transition: 0.2s;
+        }
+        .audio-btn.muted { color: #888; border-color: #888; text-decoration: line-through; }
+
+        /* 💻 電腦/平板版預設牌桌 */
+        #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
+        
+        .table-center { grid-area: 2 / 2 / 3 / 3; background: #143d1a; border: 4px solid #0d2911; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 15px; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
+        .pool-area { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; max-width: 380px; min-height: 110px; align-content: center; }
+        .deck-info { font-size: 14px; background: rgba(0,0,0,0.5); padding: 5px 14px; border-radius: 20px; margin-bottom: 8px; font-weight: bold; color: #ffeb3b; }
+
+        #focus-play-box { position: absolute; top: -45px; background: rgba(0,0,0,0.85); border: 2px solid #ffeb3b; border-radius: 10px; padding: 8px 15px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 15px #ffeb3b; z-index: 50; }
+
+        .seat-block { display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; box-sizing: border-box; border: 2px solid transparent; }
+        .seat-block.active { border-color: #ffeb3b; box-shadow: 0 0 20px #ffeb3b; background: rgba(255,235,59,0.15); }
+        .player-avatar { font-size: 32px; margin-bottom: 2px; }
+        .player-name { font-size: 14px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
+        .player-money { font-size: 13px; color: #00ffcc; font-weight: bold; background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; margin-top: 3px; }
+
+        /* ✅ 為了不和右上角的音樂按鈕打架，對家強制往下推 35px */
+        .position-top { grid-area: 1 / 2 / 2 / 3; flex-direction: row; gap: 30px; margin-top: 35px; }
+        .position-left { grid-area: 2 / 1 / 3 / 2; }
+        .position-right { grid-area: 2 / 3 / 3 / 4; }
+        .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
+
+        .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
+        .mj-card.red { color: #d32f2f; }
+        .mj-card.no-hover { cursor: default; }
+        .mj-back { width: 26px; height: 38px; background: #cb6b34; border: 2px solid #5d4037; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .mj-card.new-draw-card { border: 3px solid #ffeb3b !important; border-bottom-width: 6px !important; box-shadow: 0 0 15px #ffeb3b !important; margin-left: 12px; background: #ffffff; }
+        
+        .horizontal-cards { display: flex; gap: 3px; }
+        .vertical-cards { display: flex; flex-direction: column; gap: 3px; }
+        .meld-row { display: flex; gap: 10px; margin-top: 5px; }
+        .meld-group { display: flex; gap: 1px; background: rgba(0,0,0,0.3); padding: 2px; border-radius: 4px; }
+        .meld-group .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
+
+        .me-bottom-layout { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .my-hand-cards { display: flex; gap: 6px; }
+        .pool-area .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
+
+        /* 面板與彈窗 */
+        #interception-modal { position: fixed; bottom: 185px; right: 40px; background: rgba(0,0,0,0.9); border: 2px solid #ff9800; padding: 12px 24px; border-radius: 12px; display: flex; gap: 12px; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
+        .ctrl-btn { font-size: 17px; padding: 8px 22px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; }
+        .btn-pong { background: #ff9800; }
+        .btn-chow { background: #2196f3; }
+        .btn-kong { background: #9c27b0; }
+        .btn-pass { background: #616161; }
+        
+        #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+        .text-red { color: #d32f2f; font-weight: bold; }
+        .text-black { color: #212121; font-weight: bold; }
+
+        #game-over-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 3px solid #ffeb3b; border-radius: 20px; padding: 30px; width: 550px; max-width: 95%; z-index: 2000; box-shadow: 0 0 40px rgba(0,0,0,0.9); text-align: center; }
+        #game-over-modal h2 { color: #ffeb3b; margin-top: 0; font-size: 26px; }
+        .score-board-row { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(255,255,255,0.1); margin: 8px 0; border-radius: 8px; font-size: 18px; }
+        .end-btn-group { display: flex; justify-content: center; gap: 15px; margin-top: 25px; flex-wrap: wrap; }
+        .btn-action-end { padding: 12px 25px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: white; }
+
+        #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
+
+        /* 📱 防呆：手機轉橫屏時擋住畫面 */
+        @media screen and (max-width: 750px) and (orientation: landscape) {
+            body::before {
+                content: "🀄️ 請將手機旋轉至【直立】以獲得最佳單手遊玩體驗\A\A（轉直後版面就會完美呈現囉！）";
+                white-space: pre-wrap; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: #1b4d22; color: #ffeb3b; display: flex; justify-content: center; align-items: center;
+                font-size: 22px; font-weight: bold; z-index: 9999; padding: 20px; text-align: center; line-height: 1.6;
             }
-            
-            existingPlayer.id = socket.id;
-            existingPlayer.avatar = avatar;
-            if (room.status === 'playing') {
-                sendStateToAll(roomCode);
-            } else {
-                io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
-            }
-            return;
+            #lobby, #game-container, #game-over-modal, #vote-modal { display: none !important; }
         }
 
-        // 2. 替補機制 (小華加入了客滿的房間)
-        if (room.players.length >= 4) {
-            let disconnectedIdx = room.players.findIndex(p => !io.sockets.sockets.get(p.id));
+        /* 📱 手機直立沉浸式佈局 */
+        @media screen and (max-width: 750px) and (orientation: portrait) {
+            html, body {
+                position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+                width: 100vw !important; height: 100svh !important;
+                padding: 0 !important; margin: 0 !important; overflow: hidden !important; 
+                background: #1b4d22 !important; touch-action: none !important; overscroll-behavior: none !important;
+            }
             
-            if (disconnectedIdx !== -1) {
-                let droppedPlayerName = room.players[disconnectedIdx].name;
+            #game-container {
+                position: absolute !important;
+                top: env(safe-area-inset-top, 0px) !important; left: env(safe-area-inset-left, 0px) !important;
+                right: env(safe-area-inset-right, 0px) !important; bottom: env(safe-area-inset-bottom, 0px) !important;
+                width: auto !important; height: auto !important; max-width: none !important; display: grid !important;
+                grid-template-rows: 15svh 1fr 28svh !important; grid-template-columns: 20vw 1fr 20vw !important;
+                gap: 1vw !important; padding: 1vw !important; box-sizing: border-box !important;
+            }
+
+            .table-center { grid-area: 2 / 2 / 3 / 3 !important; padding: 2vw !important; border-width: 0 !important; background: transparent !important; box-shadow: none !important; }
+            .seat-block { padding: 0 !important; border: none !important; background: transparent !important; }
+            .seat-block.active { background: rgba(255,235,59,0.15) !important; border-radius: 8px !important; box-shadow: 0 0 10px #ffeb3b !important; padding: 2px !important; }
+            
+            /* ✅ 手機版的對家也預留 35px 給右上角的按鈕 */
+            .position-top { grid-area: 1 / 1 / 2 / 4 !important; flex-direction: row !important; justify-content: center !important; align-items: flex-start !important; gap: 3vw !important; padding-top: 2svh !important; margin-top: 35px !important;}
+            .position-left { grid-area: 2 / 1 / 3 / 2 !important; justify-content: center !important; }
+            .position-right { grid-area: 2 / 3 / 3 / 4 !important; justify-content: center !important; }
+            .position-me { grid-area: 3 / 1 / 4 / 4 !important; padding: 2svh 3vw !important; border-radius: 2svh 2svh 0 0 !important; background: rgba(0,0,0,0.6) !important; justify-content: space-between !important; }
+            
+            .mj-card { width: 7vw !important; height: 5.5svh !important; font-size: 2.2svh !important; border-bottom-width: 3px !important; border-radius: 4px !important; margin: 0 1px !important; }
+            .position-me .mj-card { width: 9vw !important; height: 7.5svh !important; font-size: 3svh !important; border-bottom-width: 4px !important; border-radius: 6px !important; margin: 0 0.5vw !important; }
+            .position-me .mj-card.new-draw-card { margin-left: 3vw !important; }
+            .position-left .mj-back, .position-right .mj-back { width: 12vw !important; height: 2svh !important; border-bottom-width: 2px !important; margin: -2px 0 !important; border-radius: 2px !important; }
+            .position-top .mj-back { width: 4vw !important; height: 3.5svh !important; border-bottom-width: 2px !important; }
+
+            .pool-area .mj-card, .meld-group .mj-card { width: 6.5vw !important; height: 5svh !important; font-size: 2svh !important; border-bottom-width: 3px !important; }
+
+            .player-avatar { font-size: 3.5svh !important; margin-bottom: 2px !important; }
+            .player-name { font-size: 1.6svh !important; }
+            .player-money { font-size: 1.5svh !important; padding: 2px 6px !important; margin-top: 2px !important; background: rgba(0,0,0,0.7) !important;}
+            #my-turn-status { font-size: 1.8svh !important; margin-left: 2vw !important; }
+
+            .vertical-cards { gap: 0 !important; margin-top: 1svh !important; }
+            .horizontal-cards { margin-top: 0.5svh !important; }
+            .me-bottom-layout { align-items: center !important; justify-content: center !important; width: 100% !important; margin-top: 1svh !important; }
+            .pool-area { max-height: 100% !important; width: 100% !important; overflow-y: auto !important; align-content: flex-start !important; justify-content: center !important; gap: 3px !important; }
+            .deck-info { font-size: 1.8svh !important; padding: 4px 12px !important; margin-bottom: 2svh !important; }
+            
+            #focus-play-box { top: auto !important; bottom: 30svh !important; transform: scale(0.85) !important; padding: 8px 16px !important; z-index: 100 !important; }
+            #interception-modal { bottom: 32svh !important; right: 2vw !important; padding: 1.5svh 4vw !important; transform: scale(0.9) !important; transform-origin: bottom right !important; }
+            .ctrl-btn { font-size: 2.5svh !important; padding: 1.5svh 5vw !important; border-radius: 8px !important; }
+            #chow-menu-modal { bottom: 45svh !important; right: 2vw !important; transform: scale(0.9) !important; transform-origin: bottom right !important; }
+            
+            #game-over-modal, #vote-modal { width: 90vw !important; max-height: 85svh !important; overflow-y: auto !important; padding: 20px !important; border-radius: 16px !important; }
+            .end-btn-group { flex-direction: column !important; gap: 10px !important; }
+            .btn-action-end { width: 100% !important; padding: 15px !important; font-size: 18px !important; }
+            #end-winner-hand { flex-wrap: wrap !important; }
+        }
+    </style>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+    <div id="lobby">
+        <h2>🀄️ 四人象棋麻將</h2>
+        <div class="form-group">
+            <label>1. 輸入你的名字：</label>
+            <input type="text" id="username" placeholder="例如：Wendy" value="玩家">
+        </div>
+        <div class="form-group">
+            <label>2. 選擇你的幸運動物頭像：</label>
+            <div class="avatar-selector" id="avatar-list">
+                <div class="avatar-box selected" onclick="selectAvatar(this)">🐱</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🐶</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🦁</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🐯</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🦊</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🐼</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🐷</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🐸</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🐵</div>
+                <div class="avatar-box" onclick="selectAvatar(this)">🦉</div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>3. 輸入房號：</label>
+            <input type="text" id="roomCode" placeholder="如：999">
+        </div>
+        <button class="btn-start" onclick="initAudioAndConnect()">進入房間開始湊桌</button>
+        <div id="wait-msg" style="margin-top: 15px; color: #666; text-align: center; font-weight: bold; white-space: pre-wrap;"></div>
+    </div>
+
+    <div id="audio-controls" class="hidden">
+        <button class="audio-btn" id="btn-bgm" onclick="toggleBGM()">🎵 音樂: 開</button>
+        <button class="audio-btn" id="btn-sfx" onclick="toggleSFX()">🔊 音效: 開</button>
+    </div>
+
+    <div id="game-container" class="hidden">
+        <div id="seat-top" class="seat-block position-top">
+            <div class="player-avatar" id="avatar-top">🐱</div>
+            <div>
+                <div class="player-name" id="name-top">對家</div>
+                <div class="player-money" id="money-top">$300</div>
+            </div>
+            <div class="horizontal-cards" id="hand-top"></div>
+            <div class="meld-row" id="melds-top"></div>
+        </div>
+
+        <div id="seat-left" class="seat-block position-left">
+            <div class="player-avatar" id="avatar-left">🐱</div>
+            <div class="player-name" id="name-left">上家</div>
+            <div class="player-money" id="money-left">$300</div>
+            <div class="vertical-cards" id="hand-left" style="margin: 8px 0;"></div>
+            <div class="meld-row" id="melds-left" style="flex-direction: column;"></div>
+        </div>
+
+        <div class="table-center">
+            <div id="focus-play-box" class="hidden">
+                <span id="focus-player-title" style="font-size:14px;color:#fff;">有人打出</span>
+                <div id="focus-card-render" class="mj-card no-hover" style="width:36px;height:52px;font-size:22px;"></div>
+            </div>
+            <div class="deck-info">剩餘牌數: <span id="deck-count">--</span> 張</div>
+            <div id="card-pool" class="pool-area"></div>
+        </div>
+
+        <div id="seat-right" class="seat-block position-right">
+            <div class="player-avatar" id="avatar-right">🐱</div>
+            <div class="player-name" id="name-right">下家</div>
+            <div class="player-money" id="money-right">$300</div>
+            <div class="vertical-cards" id="hand-right" style="margin: 8px 0;"></div>
+            <div class="meld-row" id="melds-right" style="flex-direction: column;"></div>
+        </div>
+
+        <div id="seat-me" class="position-me">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="player-avatar" id="avatar-me">🐱</span>
+                <span class="player-name" id="name-me">我</span>
+                <span class="player-money" id="money-me">$300</span>
+                <span id="my-turn-status" style="font-size:13px; color:#ffeb3b; font-weight:bold; margin-left:15px;"></span>
+            </div>
+            <div class="me-bottom-layout">
+                <div id="my-hand" class="my-hand-cards"></div>
+                <div id="melds-me" class="meld-row"></div>
+            </div>
+            <div style="margin-top: 3px; display:flex; gap:10px; justify-content:center;">
+                <button id="ankong-btn" class="ctrl-btn btn-kong hidden" onclick="checkAndAnKong()">暗槓手牌</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="interception-modal" class="hidden">
+        <button id="action-kong" class="ctrl-btn btn-kong hidden" onclick="sendAction('kong')">槓</button>
+        <button id="action-pong" class="ctrl-btn btn-pong hidden" onclick="sendAction('pong')">碰</button>
+        <button id="action-chow" class="ctrl-btn btn-chow hidden" onclick="openChowMenu()">吃</button>
+        <button class="ctrl-btn btn-pass" onclick="sendAction('pass')">取消</button>
+    </div>
+
+    <div id="chow-menu-modal" class="hidden">
+        <h4 style="margin:0 0 5px 0;">選擇吃的組合:</h4>
+        <div id="chow-choices-list"></div>
+        <button onclick="document.getElementById('chow-menu-modal').classList.add('hidden')">關閉</button>
+    </div>
+
+    <div id="game-over-modal" class="hidden">
+        <h2 id="end-winner-title">🏆 遊戲結束</h2>
+        <p id="end-reason-text" style="font-size:16px; color:#fff; font-weight:bold; margin: 10px 0;"></p>
+        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; flex-wrap:wrap; gap:4px; margin: 10px 0; min-height: 45px;"></div>
+        <div id="end-scoreboard-list"></div>
+        <div class="end-btn-group" id="normal-end-btns">
+            <button class="btn-action-end" style="background:#4caf50;" onclick="continueGame()">繼續遊戲 (莊家連莊)</button>
+            <button class="btn-action-end" style="background:#2196f3;" onclick="changeRoom()">離開房間</button>
+        </div>
+        <div id="vote-wait-msg" class="hidden" style="color:#ffeb3b; font-size:16px; font-weight:bold; margin-top:15px;"></div>
+    </div>
+
+    <div id="vote-modal" class="hidden">
+        <h2 style="color: #ff5252; margin-top:0;">⚠️ 破產警告！</h2>
+        <p id="vote-text" style="font-size:16px; color:white; font-weight:bold; line-height:1.5; margin-bottom: 15px;"></p>
+        <div id="vote-btns" class="end-btn-group">
+            <button class="btn-action-end" style="background:#4caf50;" onclick="submitVote('revive')">💰 贊助 100 元復活</button>
+            <button class="btn-action-end" style="background:#ff9800;" onclick="submitVote('debt')">📉 允許負債繼續玩</button>
+            <button class="btn-action-end" style="background:#e53935;" onclick="submitVote('kick')">👋 殘忍踢出房間</button>
+        </div>
+    </div>
+
+    <script>
+        const SERVER_URL = "https://mahjong-server-nwmj.onrender.com"; 
+        let socket;
+        let currentRoom = "";
+        let myTurn = false;
+        let selectedAvatar = "🐱";
+        let savedChowChoices = [];
+        let globalMyHand = [];
+        let globalNewCard = null;
+        let localLastPlayedIdentifier = null; 
+        const redCards = ['帥', '仕', '相', '俥', '傌', '炮', '兵'];
+
+        // 🛡️ Safari 終極防滑：鎖死橡皮筋反彈
+        document.addEventListener('touchmove', function(e) {
+            if (!e.target.closest('#lobby') && !e.target.closest('.pool-area') && !e.target.closest('#game-over-modal') && !e.target.closest('#vote-modal')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        // 🎵 雲端音效系統 (使用維基百科與 Google 官方穩定音源)
+        let isBgmMuted = false;
+        let isSfxMuted = false;
+        const sounds = {
+            bgm: new Audio('https://upload.wikimedia.org/wikipedia/commons/b/b5/Guanglin_San.ogg'),
+            play: new Audio('https://actions.google.com/sounds/v1/foley/wood_hit.ogg'),
+            action: new Audio('https://actions.google.com/sounds/v1/notifications/beep_short.ogg'),
+            win: new Audio('https://actions.google.com/sounds/v1/crowds/cheering_crowd.ogg'),
+            lose: new Audio('https://actions.google.com/sounds/v1/foley/cartoon_slide_whistle_down.ogg')
+        };
+        sounds.bgm.loop = true;
+        sounds.bgm.volume = 0.2; 
+
+        // ✅ 核心：使用者點擊後強制預載音效，突破 Safari 限制
+        function initAudioAndConnect() {
+            document.getElementById('audio-controls').classList.remove('hidden');
+            
+            // 強制初始化所有音軌以突破 iOS/Safari 自動播放限制
+            for(let key in sounds) { sounds[key].load(); }
+            if (!isBgmMuted) {
+                sounds.bgm.play().catch(e => console.log("BGM 被攔截"));
+            }
+            
+            connectToGame();
+        }
+
+        function playSound(type) {
+            if (type === 'bgm' && isBgmMuted) return;
+            if (type !== 'bgm' && isSfxMuted) return;
+            try {
+                let s = sounds[type];
+                if (type !== 'bgm') s.currentTime = 0; 
+                s.play().catch(e => {});
+            } catch(e){}
+        }
+
+        function toggleBGM() {
+            isBgmMuted = !isBgmMuted;
+            const btn = document.getElementById('btn-bgm');
+            if (isBgmMuted) {
+                sounds.bgm.pause();
+                btn.innerText = '🎵 音樂: 關';
+                btn.classList.add('muted');
+            } else {
+                playSound('bgm');
+                btn.innerText = '🎵 音樂: 開';
+                btn.classList.remove('muted');
+            }
+        }
+
+        function toggleSFX() {
+            isSfxMuted = !isSfxMuted;
+            const btn = document.getElementById('btn-sfx');
+            if (isSfxMuted) {
+                btn.innerText = '🔊 音效: 關';
+                btn.classList.add('muted');
+            } else {
+                btn.innerText = '🔊 音效: 開';
+                btn.classList.remove('muted');
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            try {
+                if (localStorage.getItem('saved_username')) {
+                    document.getElementById('username').value = localStorage.getItem('saved_username');
+                }
+            } catch (e) {}
+        });
+
+        function selectAvatar(element) {
+            document.querySelectorAll('.avatar-box').forEach(b => b.classList.remove('selected'));
+            element.classList.add('selected');
+            selectedAvatar = element.innerText;
+        }
+
+        function connectToGame() {
+            if (typeof io === 'undefined') return alert("無法連線伺服器，請重新整理網頁！");
+
+            const username = document.getElementById('username').value.trim();
+            const roomCode = document.getElementById('roomCode').value.trim();
+            if(!username || !roomCode) return alert('請完整填寫名字與房號！');
+
+            try { localStorage.setItem('saved_username', username); } catch (e) {}
+            currentRoom = roomCode;
+
+            if (socket) socket.disconnect();
+            socket = io(SERVER_URL);
+
+            socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode });
+            document.getElementById('wait-msg').innerText = `正在排入房號 ${roomCode}...`;
+
+            socket.on('roomUpdated', (players) => {
+                let displayList = players.map(p => `${p.avatar} ${p.name}`);
+                document.getElementById('wait-msg').innerText = `目前湊桌人數 (${players.length}/4):\n${displayList.join('  ')}`;
+            });
+
+            socket.on('gameStart', (data) => {
+                document.getElementById('lobby').classList.add('hidden');
+                document.getElementById('game-over-modal').classList.add('hidden'); 
+                document.getElementById('vote-modal').classList.add('hidden');
+                document.getElementById('game-container').classList.remove('hidden');
+                updateUI(data);
+            });
+
+            socket.on('gameStateUpdated', (data) => {
+                document.getElementById('lobby').classList.add('hidden');
+                document.getElementById('game-container').classList.remove('hidden');
+                updateUI(data);
+            });
+
+            socket.on('askInterception', (data) => {
+                playSound('action'); // 🎵 觸發吃碰提示音
+                savedChowChoices = data.chowChoices;
+                if (data.canKong) document.getElementById('action-kong').classList.remove('hidden');
+                else document.getElementById('action-kong').classList.add('hidden');
+                if (data.canPong) document.getElementById('action-pong').classList.remove('hidden');
+                else document.getElementById('action-pong').classList.add('hidden');
+                if (data.canChow) document.getElementById('action-chow').classList.remove('hidden');
+                else document.getElementById('action-chow').classList.add('hidden');
+                document.getElementById('interception-modal').classList.remove('hidden');
+            });
+
+            socket.on('interimVoteResult', ({ result, target }) => {
+                let msg = "";
+                if (result === 'revive') msg = `🎉 投票結果：【${target}】獲得全場贊助 100 元復活！`;
+                else if (result === 'debt') msg = `📉 投票結果：全場同意【${target}】負債繼續看牌遊玩！`;
+                else if (result === 'kick') msg = `👋 投票結果：【${target}】被無情踢出房間！`;
+                alert(msg);
+            });
+
+            socket.on('voteResult', ({ result, kickedTargets, targets }) => {
+                document.getElementById('vote-modal').classList.add('hidden');
+                let myName = document.getElementById('username').value.trim();
                 
-                if (room.status !== 'waiting') {
-                    // 如果遊戲正在進行，觸發替補強制流局
-                    let playersStatus = room.players.map(p => ({
-                        name: p.name, avatar: p.avatar, money: p.money, hand: p.hand, melds: p.melds
-                    }));
-                    
-                    io.in(roomCode).emit('gameOver', { 
-                        winner: '流局', 
-                        reason: `🚨 玩家【${droppedPlayerName}】已離線，新玩家【${username}】替補加入！\n本局強制中斷，保護舊玩家財產，準備重新開局。`, 
-                        playersStatus: playersStatus 
-                    });
-                    
-                    delete rooms[roomCode]; // 銷毀卡死的房間
-                    socket.emit('errorMessage', `✅ 替補成功！已重置牌局。\n請再次點擊「進入遊戲」按鈕與大家會合開局。`);
-                    return;
+                if (kickedTargets && kickedTargets.includes(myName)) {
+                    alert(`👋 投票通過！你已破產且被無情踢出遊戲！\n你的帳戶已註銷，可以換個房號重玩。`);
+                    document.getElementById('game-over-modal').classList.add('hidden');
+                    document.getElementById('game-container').classList.add('hidden');
+                    document.getElementById('lobby').classList.remove('hidden');
                 } else {
-                    // 若只是大廳等待，直接踢掉替換
-                    room.players.splice(disconnectedIdx, 1);
+                    if (kickedTargets && kickedTargets.length > 0) {
+                        let names = kickedTargets.join('、');
+                        alert(`👋 所有破產投票結束！【${names}】已被清除離場！\n其餘玩家財產保留，點擊「繼續遊戲」等待下一位玩家！`);
+                    } else {
+                        alert(`🎉 所有破產審判投票順利結束！全場財產已同步更新。`);
+                    }
+                    document.getElementById('normal-end-btns').classList.remove('hidden');
+                    document.getElementById('vote-wait-msg').classList.add('hidden');
                 }
-            } else {
-                socket.emit('errorMessage', '該房間人數已滿且全員都在線上！');
-                return;
-            }
-        }
-
-        const ledgerKey = `${roomCode}_${username}`;
-        if (globalMoneyLedger[ledgerKey] === undefined) {
-            globalMoneyLedger[ledgerKey] = 300;
-        }
-
-        room.players.push({ 
-            id: socket.id, name: username, avatar: avatar || '🐱', 
-            money: globalMoneyLedger[ledgerKey], hand: [], melds: [], newCard: null 
-        });
-        
-        io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
-
-        if (room.players.length === 4) {
-            room.status = 'playing';
-            room.deck = shuffleDeck(); 
-            room.pool = [];            
-            room.lastPlayed = null;
-            
-            room.turn = Math.floor(Math.random() * 4);
-            if (globalLastWinner[roomCode]) {
-                let winIdx = room.players.findIndex(p => p.name === globalLastWinner[roomCode]);
-                if (winIdx !== -1) room.turn = winIdx;
-            }
-
-            for (let i = 0; i < 4; i++) {
-                room.players[i].hand = sortHand(room.deck.splice(0, 7)); 
-                room.players[i].melds = [];                             
-                room.players[i].newCard = null;
-                const pLedgerKey = `${roomCode}_${room.players[i].name}`;
-                room.players[i].money = globalMoneyLedger[pLedgerKey]; 
-            }
-            
-            let pCard = room.deck.splice(0, 1)[0];
-            room.players[room.turn].hand.push(pCard);
-            room.players[room.turn].newCard = pCard;
-
-            if (checkWinPattern(room.players[room.turn].hand, room.players[room.turn].melds)) {
-                executeZimoWin(roomCode, room.turn);
-                return;
-            }
-
-            sendStateToAll(roomCode);
-        }
-    });
-
-    socket.on('playCard', ({ roomCode, cardIndex }) => {
-        const room = rooms[roomCode];
-        if (!room || room.status !== 'playing' || room.turn !== room.players.findIndex(p => p.id === socket.id)) return;
-
-        const player = room.players[room.turn];
-        player.newCard = null;
-        
-        const playedCard = player.hand.splice(cardIndex, 1)[0];
-        player.hand = sortHand(player.hand);
-
-        room.lastPlayed = { card: playedCard, playerIndex: room.turn };
-        room.pool.push(playedCard); 
-
-        let automaticWinPlayerIdx = -1;
-        room.players.forEach((p, idx) => {
-            if (idx === room.turn) return;
-            if (checkWinPattern([...p.hand, playedCard], p.melds)) {
-                automaticWinPlayerIdx = idx;
-            }
-        });
-
-        if (automaticWinPlayerIdx !== -1) {
-            executeHuWin(roomCode, automaticWinPlayerIdx, room.turn, playedCard);
-            return;
-        }
-
-        room.pendingActions = {};
-        let hasInterception = false;
-
-        room.players.forEach((p, idx) => {
-            if (idx === room.turn) return;
-            let canPong = p.hand.filter(c => c === playedCard).length >= 2;
-            let canKong = p.hand.filter(c => c === playedCard).length === 3;
-            let chowChoices = (idx === (room.turn + 1) % 4) ? getChowChoices(p.hand, playedCard) : [];
-            let canChow = chowChoices.length > 0;
-
-            if (canPong || canKong || canChow) {
-                hasInterception = true;
-                room.pendingActions[p.id] = { canPong, canKong, canChow, chowChoices, canWin: false, decided: false, action: null, details: null };
-                io.to(p.id).emit('askInterception', { card: playedCard, canPong, canKong, canChow, chowChoices, canWin: false });
-            }
-        });
-
-        if (hasInterception) {
-            sendStateToAll(roomCode, true); 
-        } else {
-            nextTurn(roomCode);
-        }
-    });
-
-    socket.on('declareAnKong', ({ roomCode, card }) => {
-        const room = rooms[roomCode];
-        if (!room) return;
-        const player = room.players.find(p => p.id === socket.id);
-        const pIdx = room.players.findIndex(p => p.id === socket.id);
-        
-        if (player.hand.filter(c => c === card).length === 4) {
-            player.hand = player.hand.filter(c => c !== card);
-            player.melds.push({ type: '槓', cards: [card, card, card, card] });
-            
-            let drawn = room.deck.splice(0, 1)[0];
-            player.hand.push(drawn);
-            player.newCard = drawn;
-            
-            if (checkWinPattern(player.hand, player.melds)) {
-                executeZimoWin(roomCode, pIdx);
-                return;
-            }
-            sendStateToAll(roomCode);
-        }
-    });
-
-    socket.on('respondInterception', ({ roomCode, action, details }) => {
-        const room = rooms[roomCode];
-        if (!room || !room.pendingActions[socket.id]) return;
-
-        room.pendingActions[socket.id].decided = true;
-        room.pendingActions[socket.id].action = action;
-        room.pendingActions[socket.id].details = details;
-
-        let allDecided = Object.values(room.pendingActions).every(a => a.decided);
-        if (allDecided) {
-            let kongId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'kong');
-            let pongId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'pong');
-            let chowId = Object.keys(room.pendingActions).find(id => room.pendingActions[id].action === 'chow');
-
-            if (kongId) executeMeld(roomCode, kongId, 'kong');
-            else if (pongId) executeMeld(roomCode, pongId, 'pong');
-            else if (chowId) executeMeld(roomCode, chowId, 'chow', room.pendingActions[chowId].details);
-            else nextTurn(roomCode);
-        }
-    });
-
-    socket.on('submitVote', ({ roomCode, vote }) => {
-        const room = rooms[roomCode];
-        if (!room || room.status !== 'voting') return;
-        
-        const player = room.players.find(p => p.id === socket.id);
-        if (!player || room.bankrupts.includes(player.name) || room.votes.votedPlayers.includes(player.name)) return;
-
-        room.votes.votedPlayers.push(player.name);
-        room.votes[vote]++;
-
-        let expectedVoters = room.players.length - room.bankrupts.length;
-        let totalVotes = room.votes.revive + room.votes.debt + room.votes.kick;
-
-        let decision = null;
-        if (room.votes.revive >= 2) decision = 'revive';
-        else if (room.votes.debt >= 2) decision = 'debt';
-        else if (room.votes.kick >= 2) decision = 'kick';
-        else if (totalVotes >= expectedVoters) {
-            decision = 'debt';
-        }
-
-        if (decision) {
-            const currentTarget = room.currentBankrupt;
-            
-            if (decision === 'revive') {
-                let bPlayer = room.players.find(p => p.name === currentTarget);
-                if (bPlayer) {
-                    bPlayer.money = 100;
-                    globalMoneyLedger[`${roomCode}_${currentTarget}`] = 100;
-                    globalDebtStatus[`${roomCode}_${currentTarget}`] = false; 
-                }
-            } else if (decision === 'debt') {
-                globalDebtStatus[`${roomCode}_${currentTarget}`] = true;
-            } else if (decision === 'kick') {
-                delete globalMoneyLedger[`${roomCode}_${currentTarget}`];
-                delete globalDebtStatus[`${roomCode}_${currentTarget}`];
-                room.kickedPlayers.push(currentTarget);
-            }
-
-            io.in(roomCode).emit('interimVoteResult', { result: decision, target: currentTarget });
-
-            room.bankruptQueue.shift();
-
-            if (room.bankruptQueue.length > 0) {
-                room.currentBankrupt = room.bankruptQueue[0];
-                room.votes = { revive: 0, debt: 0, kick: 0, votedPlayers: [] };
-                io.in(roomCode).emit('startBankruptcyVote', { bankrupts: [room.currentBankrupt] });
-            } else {
-                io.in(roomCode).emit('voteResult', { result: 'final', kickedTargets: room.kickedPlayers, targets: room.bankrupts });
-                delete rooms[roomCode];
-            }
-        }
-    });
-
-    function executeMeld(roomCode, playerId, type, details) {
-        const room = rooms[roomCode];
-        const pIdx = room.players.findIndex(p => p.id === playerId);
-        const player = room.players[pIdx];
-        const card = room.lastPlayed.card;
-
-        room.pool.pop(); 
-        
-        if (type === 'pong') {
-            player.hand.splice(player.hand.indexOf(card), 1);
-            player.hand.splice(player.hand.indexOf(card), 1);
-            player.melds.push({ type: '碰', cards: [card, card, card] });
-        } else if (type === 'kong') {
-            for(let i=0; i<3; i++) player.hand.splice(player.hand.indexOf(card), 1);
-            player.melds.push({ type: '槓', cards: [card, card, card, card] });
-            let drawn = room.deck.splice(0, 1)[0];
-            player.hand.push(drawn);
-            player.newCard = drawn;
-            if (checkWinPattern(player.hand, player.melds)) {
-                executeZimoWin(roomCode, pIdx);
-                return;
-            }
-        } else if (type === 'chow') {
-            details.forEach(c => {
-                if (c !== card) player.hand.splice(player.hand.indexOf(c), 1);
             });
-            player.melds.push({ type: '吃', cards: details });
-        }
 
-        player.hand = sortHand(player.hand);
-        if (type !== 'kong') player.newCard = null; 
+            socket.on('gameOver', ({ winner, reason, playersStatus, winCard }) => {
+                document.getElementById('interception-modal').classList.add('hidden');
+                document.getElementById('chow-menu-modal').classList.add('hidden');
+                
+                if (winner !== '流局') playSound('win'); // 🎵 觸發勝利音效
+                
+                document.getElementById('end-winner-title').innerText = winner === '流局' ? '🀄️ 局末流局' : `🏆 贏家：${winner}`;
+                document.getElementById('end-reason-text').innerText = reason;
+                
+                const handDiv = document.getElementById('end-winner-hand');
+                handDiv.innerHTML = "";
+                
+                if (winner !== '流局') {
+                    let winnerData = playersStatus.find(p => p.name === winner);
+                    if (winnerData) {
+                        winnerData.melds.forEach(m => {
+                            let groupHtml = `<div class="meld-group" style="margin-right:4px; display:flex; gap:1px; background:rgba(0,0,0,0.5); padding:2px; border-radius:4px;">`;
+                            m.cards.forEach(c => {
+                                const colorClass = redCards.includes(c) ? 'red' : 'black';
+                                groupHtml += `<div class="mj-card no-hover ${colorClass}">${c}</div>`;
+                            });
+                            groupHtml += `</div>`;
+                            handDiv.innerHTML += groupHtml;
+                        });
+                        
+                        let handCards = [...winnerData.hand];
+                        if (winCard) {
+                            let wcIdx = handCards.indexOf(winCard);
+                            if (wcIdx !== -1) handCards.splice(wcIdx, 1);
+                        }
+                        
+                        handCards.forEach(c => {
+                            const colorClass = redCards.includes(c) ? 'red' : 'black';
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}">${c}</div>`;
+                        });
+                        
+                        if (winCard) {
+                            const colorClass = redCards.includes(winCard) ? 'red' : 'black';
+                            handDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}" style="border: 3px solid #ffeb3b; box-shadow: 0 0 10px #ffeb3b; margin-left:8px;">${winCard}</div>`;
+                        }
+                    }
+                }
 
-        room.turn = pIdx;
-        room.lastPlayed = null;
-        room.pendingActions = {};
-        sendStateToAll(roomCode);
-    }
-
-    function executeHuWin(roomCode, winnerIdx, loserIdx, card) {
-        const room = rooms[roomCode];
-        const winner = room.players[winnerIdx];
-        const loser = room.players[loserIdx];
-        
-        room.pool.pop(); 
-        winner.hand.push(card);
-        winner.hand = sortHand(winner.hand);
-
-        let isPure = isPureColor(winner.hand, winner.melds);
-        let score = isPure ? 100 : 50;
-
-        winner.money += score;
-        loser.money -= score;
-
-        room.players.forEach(p => {
-            globalMoneyLedger[`${roomCode}_${p.name}`] = p.money;
-            if (p.money > 0) {
-                globalDebtStatus[`${roomCode}_${p.name}`] = false;
-            }
-        });
-        globalLastWinner[roomCode] = winner.name; 
-        
-        room.status = 'waiting';
-        let playersStatus = room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds}));
-        let reasonStr = `⚡️系統判定：${winner.name} 胡了 ${loser.name} 的「${card}」！${isPure?'(清一色) ':''}獨得 ${score} 元！💵`;
-        
-        checkBankruptcyAndEndGame(roomCode, winner.name, reasonStr, playersStatus, card);
-    }
-
-    function executeZimoWin(roomCode, winnerIdx) {
-        const room = rooms[roomCode];
-        const winner = room.players[winnerIdx];
-        let isPure = isPureColor(winner.hand, winner.melds);
-        let scoreEach = isPure ? 150 : 100;
-
-        room.players.forEach((p, idx) => {
-            if (idx !== winnerIdx) {
-                p.money -= scoreEach;
-                winner.money += scoreEach;
-            }
-        });
-
-        room.players.forEach(p => {
-            globalMoneyLedger[`${roomCode}_${p.name}`] = p.money;
-            if (p.money > 0) {
-                globalDebtStatus[`${roomCode}_${p.name}`] = false;
-            }
-        });
-        globalLastWinner[roomCode] = winner.name; 
-
-        room.status = 'waiting';
-        let playersStatus = room.players.map(p=>({name:p.name, avatar:p.avatar, money:p.money, hand:p.hand, melds:p.melds}));
-        let reasonStr = `⚡️系統判定：${winner.name} 自摸胡牌了！${isPure?'(清一色) ':''}三家各給 ${scoreEach} 元！🎉`;
-
-        checkBankruptcyAndEndGame(roomCode, winner.name, reasonStr, playersStatus, winner.newCard);
-    }
-
-    function nextTurn(roomCode) {
-        const room = rooms[roomCode];
-        if (room.deck.length === 0) {
-            io.in(roomCode).emit('gameOver', { winner: '流局', reason: '牌組已摸完！', playersStatus: room.players.map(p=>({name:p.name, money:p.money, hand:p.hand, melds:p.melds})) });
-            delete rooms[roomCode];
-            return;
-        }
-        
-        room.players[room.turn].newCard = null;
-        room.players[room.turn].hand = sortHand(room.players[room.turn].hand);
-
-        room.turn = (room.turn + 1) % 4;
-        let nextPlayer = room.players[room.turn];
-        let drawn = room.deck.splice(0, 1)[0];
-        
-        nextPlayer.hand = sortHand(nextPlayer.hand);
-        nextPlayer.hand.push(drawn);
-        nextPlayer.newCard = drawn;
-
-        if (checkWinPattern(nextPlayer.hand, nextPlayer.melds)) {
-            executeZimoWin(roomCode, room.turn);
-            return;
-        }
-
-        room.lastPlayed = null;
-        room.pendingActions = {};
-        sendStateToAll(roomCode);
-    }
-
-    function sendStateToAll(roomCode, isWaitingAction = false) {
-        const room = rooms[roomCode];
-        room.players.forEach((player, index) => {
-            let playersStatus = room.players.map((p, idx) => ({
-                name: p.name,
-                avatar: p.avatar,
-                money: p.money,
-                handCount: p.hand.length,
-                melds: p.melds
-            }));
-
-            io.to(player.id).emit('gameStateUpdated', {
-                myHand: player.hand,
-                newCard: player.newCard,
-                playersStatus: playersStatus,
-                turnIndex: room.turn,
-                myIndex: index,
-                deckCount: room.deck.length,
-                isMyTurn: index === room.turn && !isWaitingAction,
-                pool: room.pool,
-                lastPlayed: room.lastPlayed
+                const listDiv = document.getElementById('end-scoreboard-list');
+                listDiv.innerHTML = "";
+                playersStatus.forEach(p => {
+                    listDiv.innerHTML += `
+                        <div class="score-board-row">
+                            <span class="score-name">${p.avatar} <b>${p.name}</b></span>
+                            <span style="color:${p.money <= 0 ? '#ff5252' : '#00ffcc'};font-weight:bold;" class="score-money">$${p.money} 元</span>
+                        </div>
+                    `;
+                });
+                
+                document.getElementById('normal-end-btns').classList.remove('hidden');
+                document.getElementById('vote-wait-msg').classList.add('hidden');
+                document.getElementById('game-over-modal').classList.remove('hidden');
             });
-        });
-    }
 
-    // 🛡️ 保護機制：只有在大廳等待時，才因為斷線而把人踢掉。遊戲中斷線會保留座位。
-    socket.on('disconnect', () => {
-        for (const roomCode in rooms) {
-            const room = rooms[roomCode];
-            if (room.status === 'waiting') {
-                const pIdx = room.players.findIndex(p => p.id === socket.id);
-                if (pIdx !== -1) {
-                    room.players.splice(pIdx, 1);
-                    io.in(roomCode).emit('roomUpdated', room.players.map(p => ({name: p.name, avatar: p.avatar})));
+            socket.on('startBankruptcyVote', ({ bankrupts }) => {
+                playSound('lose'); // 🎵 觸發破產音效
+                document.getElementById('normal-end-btns').classList.add('hidden');
+                let myName = document.getElementById('username').value.trim();
+                let targetName = bankrupts[0];
+
+                if (myName === targetName) {
+                    document.getElementById('vote-wait-msg').classList.remove('hidden');
+                    document.getElementById('vote-wait-msg').innerText = `💀 你已破產！正在等待全場玩家對你進行命運審判...`;
+                    document.getElementById('vote-modal').classList.add('hidden'); 
+                } else {
+                    document.getElementById('vote-modal').classList.remove('hidden');
+                    document.getElementById('vote-text').innerText = `玩家【${targetName}】已經破產了！\n請問要如何處置？ (先獲2票者成立)`;
+                    document.getElementById('vote-btns').classList.remove('hidden');
+                }
+            });
+
+            socket.on('errorMessage', (msg) => alert(msg));
+        }
+
+        function updateUI(data) {
+            myTurn = data.isMyTurn;
+            globalMyHand = data.myHand;
+            globalNewCard = data.newCard;
+            document.getElementById('deck-count').innerText = data.deckCount;
+            document.getElementById('chow-menu-modal').classList.add('hidden');
+
+            const myIdx = data.myIndex;
+            const pStatus = data.playersStatus;
+
+            const idxMe = myIdx;
+            const idxRight = (myIdx + 1) % 4;
+            const idxTop = (myIdx + 2) % 4;
+            const idxLeft = (myIdx + 3) % 4;
+
+            setSeatData('me', pStatus[idxMe], idxMe === data.turnIndex);
+            setSeatData('right', pStatus[idxRight], idxRight === data.turnIndex, 'vertical');
+            setSeatData('top', pStatus[idxTop], idxTop === data.turnIndex, 'horizontal');
+            setSeatData('left', pStatus[idxLeft], idxLeft === data.turnIndex, 'vertical');
+
+            document.getElementById('my-turn-status').innerText = myTurn ? "📢 輪到你的回合，請點選一張牌打出！" : `等待 ${pStatus[data.turnIndex].name} 出牌...`;
+
+            const focusBox = document.getElementById('focus-play-box');
+            if (data.lastPlayed) {
+                // 🎵 偵測池子裡的牌有變動，才觸發「出牌聲」
+                let newPlayedIdentifier = data.lastPlayed.card + '_' + data.lastPlayed.playerIndex + '_' + data.pool.length;
+                if (localLastPlayedIdentifier !== newPlayedIdentifier) {
+                    playSound('play');
+                    localLastPlayedIdentifier = newPlayedIdentifier;
+                }
+
+                let shooter = pStatus[data.lastPlayed.playerIndex];
+                document.getElementById('focus-player-title').innerText = `${shooter.avatar} ${shooter.name} 打出`;
+                const cardRender = document.getElementById('focus-card-render');
+                cardRender.innerText = data.lastPlayed.card;
+                cardRender.className = `mj-card red no-hover`;
+                if(!redCards.includes(data.lastPlayed.card)) cardRender.className = `mj-card no-hover`;
+                focusBox.classList.remove('hidden');
+            } else {
+                focusBox.classList.add('hidden');
+            }
+
+            const myHandDiv = document.getElementById('my-hand');
+            myHandDiv.innerHTML = "";
+            
+            let hasRenderedNewCard = false;
+            data.myHand.forEach((card, index) => {
+                const colorClass = redCards.includes(card) ? 'red' : 'black';
+                let isNewStyle = "";
+                
+                if (myTurn && data.myHand.length === 8 && card === globalNewCard && !hasRenderedNewCard && index === data.myHand.length - 1) {
+                    isNewStyle = "new-draw-card";
+                    hasRenderedNewCard = true;
+                }
+                
+                myHandDiv.innerHTML += `<div class="mj-card ${colorClass} ${isNewStyle}" onclick="playCard(${index})">${card}</div>`;
+            });
+
+            let hasAnKong = false;
+            let uniqueCards = [...new Set(data.myHand)];
+            uniqueCards.forEach(c => {
+                if(data.myHand.filter(x => x === c).length === 4) hasAnKong = true;
+            });
+            if(myTurn && hasAnKong) document.getElementById('ankong-btn').classList.remove('hidden');
+            else document.getElementById('ankong-btn').classList.add('hidden');
+
+            const poolDiv = document.getElementById('card-pool');
+            poolDiv.innerHTML = "";
+            data.pool.forEach((card) => {
+                const colorClass = redCards.includes(card) ? 'red' : 'black';
+                poolDiv.innerHTML += `<div class="mj-card no-hover ${colorClass}">${card}</div>`;
+            });
+        }
+
+        function setSeatData(pos, status, isActive, type = 'horizontal') {
+            const block = document.getElementById(`seat-${pos}`);
+            const nameTxt = document.getElementById(`name-${pos}`);
+            const moneyTxt = document.getElementById(`money-${pos}`);
+            const avatarTxt = document.getElementById(`avatar-${pos}`);
+            const handDiv = document.getElementById(`hand-${pos}`);
+            const meldsDiv = document.getElementById(`melds-${pos}`);
+
+            if(block) {
+                if(isActive) block.classList.add('active');
+                else block.classList.remove('active');
+            }
+            if(nameTxt) {
+                let suffix = pos === 'me' ? ' (我)' : pos === 'left' ? ' (上家)' : pos === 'right' ? ' (下家)' : ' (對家)';
+                nameTxt.innerText = status.name + suffix;
+            }
+            if(moneyTxt) {
+                moneyTxt.innerText = ` $${status.money} 元`;
+                moneyTxt.style.color = status.money <= 0 ? '#ff5252' : '#00ffcc';
+            }
+            if(avatarTxt) avatarTxt.innerText = status.avatar;
+
+            if (handDiv) {
+                handDiv.innerHTML = "";
+                for(let i=0; i<status.handCount; i++) {
+                    handDiv.innerHTML += `<div class="mj-back"></div>`;
                 }
             }
-        }
-    });
-});
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`伺服器在 ${PORT} 啟動`));
+            if (meldsDiv) {
+                meldsDiv.innerHTML = "";
+                status.melds.forEach(m => {
+                    let groupHtml = `<div class="meld-group">`;
+                    m.cards.forEach(card => {
+                        const colorClass = redCards.includes(card) ? 'red' : 'black';
+                        groupHtml += `<div class="mj-card no-hover ${colorClass}">${card}</div>`;
+                    });
+                    groupHtml += `</div>`;
+                    meldsDiv.innerHTML += groupHtml;
+                });
+            }
+        }
+
+        function playCard(index) {
+            if (!myTurn) return alert("還沒輪到你喔！");
+            socket.emit('playCard', { roomCode: currentRoom, cardIndex: index });
+        }
+
+        function sendAction(action, details = null) {
+            document.getElementById('interception-modal').classList.add('hidden');
+            document.getElementById('chow-menu-modal').classList.add('hidden');
+            socket.emit('respondInterception', { roomCode: currentRoom, action, details });
+        }
+
+        function submitVote(voteType) {
+            document.getElementById('vote-btns').classList.add('hidden');
+            document.getElementById('vote-text').innerText = "🗳️ 已收到您的選票，正在等待其他人...";
+            socket.emit('submitVote', { roomCode: currentRoom, vote: voteType });
+        }
+
+        function openChowMenu() {
+            const listDiv = document.getElementById('chow-choices-list');
+            listDiv.innerHTML = "";
+            savedChowChoices.forEach(choice => {
+                let row = document.createElement('div');
+                row.className = "chow-choice-row";
+                choice.forEach(c => {
+                    const colorClass = redCards.includes(c) ? "text-red" : "text-black";
+                    row.innerHTML += `<span class="${colorClass}">${c} </span>`;
+                });
+                row.onclick = () => sendAction('chow', choice);
+                listDiv.appendChild(row);
+            });
+            document.getElementById('chow-menu-modal').classList.remove('hidden');
+        }
+
+        function checkAndAnKong() {
+            let uniqueCards = [...new Set(globalMyHand)];
+            uniqueCards.forEach(c => {
+                if(globalMyHand.filter(x => x === c).length === 4) {
+                    if(confirm(`確定要暗槓「${c}」嗎？`)) {
+                        socket.emit('declareAnKong', { roomCode: currentRoom, card: c });
+                    }
+                }
+            });
+        }
+
+        function continueGame() {
+            document.getElementById('game-over-modal').classList.add('hidden');
+            document.getElementById('game-container').classList.add('hidden');
+            document.getElementById('lobby').classList.remove('hidden');
+            
+            const username = document.getElementById('username').value.trim();
+            if (socket) {
+                socket.emit('joinRoom', { username, avatar: selectedAvatar, roomCode: currentRoom });
+                document.getElementById('wait-msg').innerText = `已就緒！正在等待其他玩家...\n（由上局贏家優先開局！）`;
+            } else {
+                connectToGame();
+            }
+        }
+
+        function changeRoom() {
+            document.getElementById('game-over-modal').classList.add('hidden');
+            document.getElementById('game-container').classList.add('hidden');
+            document.getElementById('lobby').classList.remove('hidden');
+            document.getElementById('wait-msg').innerText = "請輸入新房號重新湊桌，您的點數已安全累積！";
+        }
+    </script>
+</body>
+</html>
