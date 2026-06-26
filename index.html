@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>線上四人象棋麻將（旗艦完整版）</title>
+    <title>線上四人象棋麻將（聲歷其境版）</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+        body { font-family: Arial, sans-serif; background: #1b4d22; text-align: center; margin: 0; padding: 10px; color: white; overflow-x: hidden; overflow-y: auto; }
         .hidden { display: none !important; }
         
-        /* 大廳 */
         #lobby { 
             max-width: 450px; margin: 30px auto; background: white; padding: 25px; 
-            border-radius: 16px; color: #333; text-align: left;
-            max-height: 80vh; overflow-y: auto; -webkit-overflow-scrolling: touch; 
+            border-radius: 16px; color: #333; box-shadow: 0 6px 20px rgba(0,0,0,0.4); 
+            text-align: left; position: relative; z-index: 100;
+            max-height: 85vh; overflow-y: auto; -webkit-overflow-scrolling: touch; 
         }
         #lobby h2 { text-align: center; color: #1b4d22; margin-top: 0; }
         .form-group { margin-bottom: 15px; }
@@ -21,20 +21,24 @@
         
         .avatar-selector { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 10px 0; }
         .avatar-box { font-size: 30px; text-align: center; padding: 10px; background: #f0f0f0; border: 3px solid transparent; border-radius: 12px; cursor: pointer; transition: 0.2s; user-select: none; }
+        .avatar-box:hover { background: #e0e0e0; transform: scale(1.1); }
         .avatar-box.selected { border-color: #ff9800; background: #fff3e0; }
         .btn-start { width: 100%; padding: 14px; background: #4caf50; color: white; font-size: 18px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; }
 
-        /* ✅ 優化：音效控制按鈕並排釘在最右上角，體積縮小 */
-        #audio-controls {
-            position: fixed; top: 5px; right: 5px;
-            display: flex; flex-direction: row; gap: 5px; z-index: 2000;
-        }
+        /* ✅ 獨立的音頻按鈕：強制釘在最角落，不再使用 flex 排版干擾牌桌 */
         .audio-btn {
-            background: rgba(0,0,0,0.6); color: #ffeb3b; border: 1px solid #ffeb3b;
-            padding: 4px 8px; border-radius: 6px; font-weight: bold; cursor: pointer;
-            font-size: 12px; outline: none; transition: 0.2s;
+            position: fixed; top: 10px;
+            background: rgba(0,0,0,0.7); color: #ffeb3b;
+            border: 1px solid #ffeb3b; padding: 6px 12px;
+            border-radius: 16px; font-weight: bold; cursor: pointer;
+            font-size: 13px; z-index: 1000; transition: 0.2s; outline: none;
         }
+        #btn-bgm { left: 10px; }
+        #btn-sfx { right: 10px; }
+
+        .audio-btn:hover { background: #ffeb3b; color: #000; }
         .audio-btn.muted { color: #888; border-color: #888; text-decoration: line-through; }
+        .audio-btn.muted:hover { background: #444; color: #ccc; }
 
         /* 💻 電腦/平板版預設牌桌 */
         #game-container { max-width: 1000px; margin: 0 auto; display: grid; grid-template-rows: 110px 1fr 160px; grid-template-columns: 160px 1fr 160px; height: 94vh; gap: 8px; position: relative; }
@@ -45,26 +49,29 @@
 
         #focus-play-box { position: absolute; top: -45px; background: rgba(0,0,0,0.85); border: 2px solid #ffeb3b; border-radius: 10px; padding: 8px 15px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 15px #ffeb3b; z-index: 50; }
 
+        /* 確保電腦版的對家不會被上方的音樂按鈕蓋住 */
         .seat-block { display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; box-sizing: border-box; border: 2px solid transparent; }
         .seat-block.active { border-color: #ffeb3b; box-shadow: 0 0 20px #ffeb3b; background: rgba(255,235,59,0.15); }
         .player-avatar { font-size: 32px; margin-bottom: 2px; }
         .player-name { font-size: 14px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
         .player-money { font-size: 13px; color: #00ffcc; font-weight: bold; background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 10px; margin-top: 3px; }
 
-        /* ✅ 為了不和右上角的音樂按鈕打架，對家強制往下推 35px */
-        .position-top { grid-area: 1 / 2 / 2 / 3; flex-direction: row; gap: 30px; margin-top: 35px; }
+        .position-top { grid-area: 1 / 2 / 2 / 3; flex-direction: row; gap: 30px; margin-top: 30px; /* 電腦版讓出空間 */ }
         .position-left { grid-area: 2 / 1 / 3 / 2; }
         .position-right { grid-area: 2 / 3 / 3 / 4; }
         .position-me { grid-area: 3 / 1 / 4 / 4; background: rgba(0,0,0,0.4); border-top: 3px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; justify-content: space-between; padding: 10px 20px; border-radius: 12px 12px 0 0; }
 
         .mj-card { width: 44px; height: 64px; background: #fffde8; border: 2px solid #5d4037; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: bold; color: #212121; box-shadow: 0 4px 6px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: 0.1s; border-bottom-width: 5px; }
         .mj-card.red { color: #d32f2f; }
+        .mj-card:hover:not(.no-hover) { transform: translateY(-10px); background: #fff; }
         .mj-card.no-hover { cursor: default; }
         .mj-back { width: 26px; height: 38px; background: #cb6b34; border: 2px solid #5d4037; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+
         .mj-card.new-draw-card { border: 3px solid #ffeb3b !important; border-bottom-width: 6px !important; box-shadow: 0 0 15px #ffeb3b !important; margin-left: 12px; background: #ffffff; }
         
         .horizontal-cards { display: flex; gap: 3px; }
         .vertical-cards { display: flex; flex-direction: column; gap: 3px; }
+
         .meld-row { display: flex; gap: 10px; margin-top: 5px; }
         .meld-group { display: flex; gap: 1px; background: rgba(0,0,0,0.3); padding: 2px; border-radius: 4px; }
         .meld-group .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
@@ -73,7 +80,6 @@
         .my-hand-cards { display: flex; gap: 6px; }
         .pool-area .mj-card { width: 32px; height: 46px; font-size: 18px; border-bottom-width: 3px; cursor: default; }
 
-        /* 面板與彈窗 */
         #interception-modal { position: fixed; bottom: 185px; right: 40px; background: rgba(0,0,0,0.9); border: 2px solid #ff9800; padding: 12px 24px; border-radius: 12px; display: flex; gap: 12px; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
         .ctrl-btn { font-size: 17px; padding: 8px 22px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; }
         .btn-pong { background: #ff9800; }
@@ -83,6 +89,7 @@
         
         #chow-menu-modal { position: fixed; bottom: 250px; right: 40px; background: white; color: #333; padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .chow-choice-row { display: flex; gap: 5px; cursor: pointer; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+        
         .text-red { color: #d32f2f; font-weight: bold; }
         .text-black { color: #212121; font-weight: bold; }
 
@@ -94,7 +101,6 @@
 
         #vote-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); border: 4px solid #e53935; border-radius: 20px; padding: 30px; width: 450px; max-width: 90%; z-index: 2500; box-shadow: 0 0 40px rgba(229, 57, 53, 0.8); text-align: center; }
 
-        /* 📱 防呆：手機轉橫屏時擋住畫面 */
         @media screen and (max-width: 750px) and (orientation: landscape) {
             body::before {
                 content: "🀄️ 請將手機旋轉至【直立】以獲得最佳單手遊玩體驗\A\A（轉直後版面就會完美呈現囉！）";
@@ -105,13 +111,13 @@
             #lobby, #game-container, #game-over-modal, #vote-modal { display: none !important; }
         }
 
-        /* 📱 手機直立沉浸式佈局 */
         @media screen and (max-width: 750px) and (orientation: portrait) {
             html, body {
                 position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
                 width: 100vw !important; height: 100svh !important;
                 padding: 0 !important; margin: 0 !important; overflow: hidden !important; 
-                background: #1b4d22 !important; touch-action: none !important; overscroll-behavior: none !important;
+                background: #1b4d22 !important; touch-action: none !important; 
+                overscroll-behavior: none !important;
             }
             
             #game-container {
@@ -127,8 +133,8 @@
             .seat-block { padding: 0 !important; border: none !important; background: transparent !important; }
             .seat-block.active { background: rgba(255,235,59,0.15) !important; border-radius: 8px !important; box-shadow: 0 0 10px #ffeb3b !important; padding: 2px !important; }
             
-            /* ✅ 手機版的對家也預留 35px 給右上角的按鈕 */
-            .position-top { grid-area: 1 / 1 / 2 / 4 !important; flex-direction: row !important; justify-content: center !important; align-items: flex-start !important; gap: 3vw !important; padding-top: 2svh !important; margin-top: 35px !important;}
+            /* 手機版：對家的資訊置中，不會被左右的音頻按鈕擋到 */
+            .position-top { grid-area: 1 / 1 / 2 / 4 !important; flex-direction: row !important; justify-content: center !important; align-items: flex-start !important; gap: 3vw !important; padding-top: 2svh !important; margin-top: 0 !important; }
             .position-left { grid-area: 2 / 1 / 3 / 2 !important; justify-content: center !important; }
             .position-right { grid-area: 2 / 3 / 3 / 4 !important; justify-content: center !important; }
             .position-me { grid-area: 3 / 1 / 4 / 4 !important; padding: 2svh 3vw !important; border-radius: 2svh 2svh 0 0 !important; background: rgba(0,0,0,0.6) !important; justify-content: space-between !important; }
@@ -149,6 +155,7 @@
             .vertical-cards { gap: 0 !important; margin-top: 1svh !important; }
             .horizontal-cards { margin-top: 0.5svh !important; }
             .me-bottom-layout { align-items: center !important; justify-content: center !important; width: 100% !important; margin-top: 1svh !important; }
+            
             .pool-area { max-height: 100% !important; width: 100% !important; overflow-y: auto !important; align-content: flex-start !important; justify-content: center !important; gap: 3px !important; }
             .deck-info { font-size: 1.8svh !important; padding: 4px 12px !important; margin-bottom: 2svh !important; }
             
@@ -160,7 +167,13 @@
             #game-over-modal, #vote-modal { width: 90vw !important; max-height: 85svh !important; overflow-y: auto !important; padding: 20px !important; border-radius: 16px !important; }
             .end-btn-group { flex-direction: column !important; gap: 10px !important; }
             .btn-action-end { width: 100% !important; padding: 15px !important; font-size: 18px !important; }
+            
             #end-winner-hand { flex-wrap: wrap !important; }
+
+            /* 手機版：釘死在極限角落，配合 icon 微調大小 */
+            .audio-btn { top: 1.5svh; padding: 0.8svh 2vw; font-size: 1.8svh; }
+            #btn-bgm { left: 2vw; }
+            #btn-sfx { right: 2vw; }
         }
     </style>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -168,7 +181,7 @@
 <body>
 
     <div id="lobby">
-        <h2>🀄️ 四人象棋麻將</h2>
+        <h2>🀄️ 四人象棋麻將（聲歷其境版）</h2>
         <div class="form-group">
             <label>1. 輸入你的名字：</label>
             <input type="text" id="username" placeholder="例如：Wendy" value="玩家">
@@ -192,14 +205,12 @@
             <label>3. 輸入房號：</label>
             <input type="text" id="roomCode" placeholder="如：999">
         </div>
-        <button class="btn-start" onclick="initAudioAndConnect()">進入房間開始湊桌</button>
+        <button class="btn-start" onclick="connectToGame()">進入房間開始湊桌</button>
         <div id="wait-msg" style="margin-top: 15px; color: #666; text-align: center; font-weight: bold; white-space: pre-wrap;"></div>
     </div>
 
-    <div id="audio-controls" class="hidden">
-        <button class="audio-btn" id="btn-bgm" onclick="toggleBGM()">🎵 音樂: 開</button>
-        <button class="audio-btn" id="btn-sfx" onclick="toggleSFX()">🔊 音效: 開</button>
-    </div>
+    <button class="audio-btn" id="btn-bgm" onclick="toggleBGM()">🎵 音樂: 開</button>
+    <button class="audio-btn" id="btn-sfx" onclick="toggleSFX()">🔊 音效: 開</button>
 
     <div id="game-container" class="hidden">
         <div id="seat-top" class="seat-block position-top">
@@ -270,7 +281,9 @@
     <div id="game-over-modal" class="hidden">
         <h2 id="end-winner-title">🏆 遊戲結束</h2>
         <p id="end-reason-text" style="font-size:16px; color:#fff; font-weight:bold; margin: 10px 0;"></p>
-        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; flex-wrap:wrap; gap:4px; margin: 10px 0; min-height: 45px;"></div>
+        
+        <div id="end-winner-hand" style="display:flex; justify-content:center; align-items:flex-end; gap:4px; margin: 10px 0; min-height: 45px;"></div>
+        
         <div id="end-scoreboard-list"></div>
         <div class="end-btn-group" id="normal-end-btns">
             <button class="btn-action-end" style="background:#4caf50;" onclick="continueGame()">繼續遊戲 (莊家連莊)</button>
@@ -291,6 +304,7 @@
 
     <script>
         const SERVER_URL = "https://mahjong-server-nwmj.onrender.com"; 
+        
         let socket;
         let currentRoom = "";
         let myTurn = false;
@@ -299,40 +313,28 @@
         let globalMyHand = [];
         let globalNewCard = null;
         let localLastPlayedIdentifier = null; 
+        
         const redCards = ['帥', '仕', '相', '俥', '傌', '炮', '兵'];
 
-        // 🛡️ Safari 終極防滑：鎖死橡皮筋反彈
         document.addEventListener('touchmove', function(e) {
             if (!e.target.closest('#lobby') && !e.target.closest('.pool-area') && !e.target.closest('#game-over-modal') && !e.target.closest('#vote-modal')) {
                 e.preventDefault();
             }
         }, { passive: false });
 
-        // 🎵 雲端音效系統 (使用維基百科與 Google 官方穩定音源)
         let isBgmMuted = false;
         let isSfxMuted = false;
+        
         const sounds = {
-            bgm: new Audio('https://upload.wikimedia.org/wikipedia/commons/b/b5/Guanglin_San.ogg'),
-            play: new Audio('https://actions.google.com/sounds/v1/foley/wood_hit.ogg'),
-            action: new Audio('https://actions.google.com/sounds/v1/notifications/beep_short.ogg'),
-            win: new Audio('https://actions.google.com/sounds/v1/crowds/cheering_crowd.ogg'),
-            lose: new Audio('https://actions.google.com/sounds/v1/foley/cartoon_slide_whistle_down.ogg')
+            bgm: new Audio('https://cdn.pixabay.com/download/audio/2022/01/26/audio_d0c6ff1cb8.mp3?filename=chinese-traditional-112646.mp3'),
+            play: new Audio('https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8b8175ac5.mp3?filename=wood-block-1-87165.mp3'),
+            action: new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_bb630cc098.mp3?filename=message-incoming-132126.mp3'),
+            win: new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_c6ccf3232f.mp3?filename=success-1-6297.mp3'),
+            lose: new Audio('https://cdn.pixabay.com/download/audio/2021/08/04/audio_1d9e26210f.mp3?filename=sad-trombone-46931.mp3')
         };
+        
         sounds.bgm.loop = true;
         sounds.bgm.volume = 0.2; 
-
-        // ✅ 核心：使用者點擊後強制預載音效，突破 Safari 限制
-        function initAudioAndConnect() {
-            document.getElementById('audio-controls').classList.remove('hidden');
-            
-            // 強制初始化所有音軌以突破 iOS/Safari 自動播放限制
-            for(let key in sounds) { sounds[key].load(); }
-            if (!isBgmMuted) {
-                sounds.bgm.play().catch(e => console.log("BGM 被攔截"));
-            }
-            
-            connectToGame();
-        }
 
         function playSound(type) {
             if (type === 'bgm' && isBgmMuted) return;
@@ -340,7 +342,10 @@
             try {
                 let s = sounds[type];
                 if (type !== 'bgm') s.currentTime = 0; 
-                s.play().catch(e => {});
+                let playPromise = s.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.log('等待互動或檔案遺失，忽略音效錯誤'); });
+                }
             } catch(e){}
         }
 
@@ -394,6 +399,8 @@
             try { localStorage.setItem('saved_username', username); } catch (e) {}
             currentRoom = roomCode;
 
+            if (!isBgmMuted) playSound('bgm');
+
             if (socket) socket.disconnect();
             socket = io(SERVER_URL);
 
@@ -420,7 +427,7 @@
             });
 
             socket.on('askInterception', (data) => {
-                playSound('action'); // 🎵 觸發吃碰提示音
+                playSound('action');
                 savedChowChoices = data.chowChoices;
                 if (data.canKong) document.getElementById('action-kong').classList.remove('hidden');
                 else document.getElementById('action-kong').classList.add('hidden');
@@ -464,7 +471,9 @@
                 document.getElementById('interception-modal').classList.add('hidden');
                 document.getElementById('chow-menu-modal').classList.add('hidden');
                 
-                if (winner !== '流局') playSound('win'); // 🎵 觸發勝利音效
+                if (winner !== '流局') {
+                    playSound('win');
+                }
                 
                 document.getElementById('end-winner-title').innerText = winner === '流局' ? '🀄️ 局末流局' : `🏆 贏家：${winner}`;
                 document.getElementById('end-reason-text').innerText = reason;
@@ -520,7 +529,7 @@
             });
 
             socket.on('startBankruptcyVote', ({ bankrupts }) => {
-                playSound('lose'); // 🎵 觸發破產音效
+                playSound('lose');
                 document.getElementById('normal-end-btns').classList.add('hidden');
                 let myName = document.getElementById('username').value.trim();
                 let targetName = bankrupts[0];
@@ -563,7 +572,6 @@
 
             const focusBox = document.getElementById('focus-play-box');
             if (data.lastPlayed) {
-                // 🎵 偵測池子裡的牌有變動，才觸發「出牌聲」
                 let newPlayedIdentifier = data.lastPlayed.card + '_' + data.lastPlayed.playerIndex + '_' + data.pool.length;
                 if (localLastPlayedIdentifier !== newPlayedIdentifier) {
                     playSound('play');
